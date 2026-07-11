@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Acceso Seguro - Tuya Dashboard</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        /* Touch optimization and prevent double-tap zoom on mobile/tablets */
+        button {
+            touch-action: manipulation;
+        }
+        body {
+            -webkit-tap-highlight-color: transparent;
+        }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col justify-center items-center p-4">
+
+    <!-- Container -->
+    <div class="w-full max-w-sm bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl flex flex-col space-y-6 text-center">
+        
+        <!-- Header / Icon -->
+        <div class="flex flex-col items-center space-y-2">
+            <div class="bg-orange-500/10 text-orange-500 p-4 rounded-full border border-orange-500/20 shadow-inner">
+                <i data-lucide="shield-alert" class="w-10 h-10 animate-pulse"></i>
+            </div>
+            <h1 class="text-xl font-extrabold tracking-wide uppercase text-slate-100">Acceso Requerido</h1>
+            <p class="text-xs text-slate-400 font-medium">Ingresa el código PIN para acceder al Panel de Control</p>
+        </div>
+
+        <!-- PIN Display Dots -->
+        <div class="flex flex-col items-center space-y-4">
+            <!-- Pin Dots Container -->
+            <div class="flex justify-center space-x-4 py-3" id="dots-container">
+                <span class="w-4 h-4 rounded-full border border-slate-700 bg-slate-800 transition-all duration-150" id="dot-1"></span>
+                <span class="w-4 h-4 rounded-full border border-slate-700 bg-slate-800 transition-all duration-150" id="dot-2"></span>
+                <span class="w-4 h-4 rounded-full border border-slate-700 bg-slate-800 transition-all duration-150" id="dot-3"></span>
+                <span class="w-4 h-4 rounded-full border border-slate-700 bg-slate-800 transition-all duration-150" id="dot-4"></span>
+            </div>
+            
+            <!-- Hidden input or variable in JS to track PIN -->
+            <div id="error-message" class="text-red-500 text-xs font-bold hidden animate-bounce flex items-center space-x-1.5">
+                <i data-lucide="alert-circle" class="w-4 h-4 shrink-0"></i>
+                <span id="error-text">Código PIN incorrecto</span>
+            </div>
+        </div>
+
+        <!-- Keypad (Large Touch Buttons) -->
+        <div class="grid grid-cols-3 gap-3 sm:gap-4 max-w-[280px] mx-auto w-full">
+            <!-- Row 1 -->
+            <button onclick="pressKey('1')" class="bg-slate-800/80 hover:bg-slate-800 active:bg-slate-700/80 text-slate-100 text-2xl font-black py-4 rounded-2xl border border-slate-700/50 shadow-sm transition-all focus:outline-none">1</button>
+            <button onclick="pressKey('2')" class="bg-slate-800/80 hover:bg-slate-800 active:bg-slate-700/80 text-slate-100 text-2xl font-black py-4 rounded-2xl border border-slate-700/50 shadow-sm transition-all focus:outline-none">2</button>
+            <button onclick="pressKey('3')" class="bg-slate-800/80 hover:bg-slate-800 active:bg-slate-700/80 text-slate-100 text-2xl font-black py-4 rounded-2xl border border-slate-700/50 shadow-sm transition-all focus:outline-none">3</button>
+            
+            <!-- Row 2 -->
+            <button onclick="pressKey('4')" class="bg-slate-800/80 hover:bg-slate-800 active:bg-slate-700/80 text-slate-100 text-2xl font-black py-4 rounded-2xl border border-slate-700/50 shadow-sm transition-all focus:outline-none">4</button>
+            <button onclick="pressKey('5')" class="bg-slate-800/80 hover:bg-slate-800 active:bg-slate-700/80 text-slate-100 text-2xl font-black py-4 rounded-2xl border border-slate-700/50 shadow-sm transition-all focus:outline-none">5</button>
+            <button onclick="pressKey('6')" class="bg-slate-800/80 hover:bg-slate-800 active:bg-slate-700/80 text-slate-100 text-2xl font-black py-4 rounded-2xl border border-slate-700/50 shadow-sm transition-all focus:outline-none">6</button>
+            
+            <!-- Row 3 -->
+            <button onclick="pressKey('7')" class="bg-slate-800/80 hover:bg-slate-800 active:bg-slate-700/80 text-slate-100 text-2xl font-black py-4 rounded-2xl border border-slate-700/50 shadow-sm transition-all focus:outline-none">7</button>
+            <button onclick="pressKey('8')" class="bg-slate-800/80 hover:bg-slate-800 active:bg-slate-700/80 text-slate-100 text-2xl font-black py-4 rounded-2xl border border-slate-700/50 shadow-sm transition-all focus:outline-none">8</button>
+            <button onclick="pressKey('9')" class="bg-slate-800/80 hover:bg-slate-800 active:bg-slate-700/80 text-slate-100 text-2xl font-black py-4 rounded-2xl border border-slate-700/50 shadow-sm transition-all focus:outline-none">9</button>
+            
+            <!-- Row 4 -->
+            <button onclick="clearPin()" class="bg-red-500/10 hover:bg-red-500/20 active:bg-red-500/30 text-red-500 text-lg font-extrabold py-4 rounded-2xl border border-red-500/20 shadow-sm transition-all focus:outline-none flex items-center justify-center">
+                <i data-lucide="delete" class="w-6 h-6"></i>
+            </button>
+            <button onclick="pressKey('0')" class="bg-slate-800/80 hover:bg-slate-800 active:bg-slate-700/80 text-slate-100 text-2xl font-black py-4 rounded-2xl border border-slate-700/50 shadow-sm transition-all focus:outline-none">0</button>
+            <button id="btn-submit" onclick="submitPin()" class="bg-emerald-500 hover:bg-emerald-600 active:bg-emerald-700 text-white font-extrabold py-4 rounded-2xl shadow-md shadow-emerald-500/10 border border-emerald-500/50 transition-all focus:outline-none flex items-center justify-center">
+                <i data-lucide="arrow-right" class="w-6 h-6" id="btn-icon"></i>
+            </button>
+        </div>
+
+        <!-- Footer Info -->
+        <p class="text-[10px] text-slate-500 uppercase tracking-widest font-black pt-2">Tuya Dashboard Premium</p>
+    </div>
+
+    <script>
+        // Init icons
+        lucide.createIcons();
+
+        let pin = '';
+        const maxPinLength = 4;
+        const btnSubmit = document.getElementById('btn-submit');
+        const btnIcon = document.getElementById('btn-icon');
+        const errorMessage = document.getElementById('error-message');
+        const errorText = document.getElementById('error-text');
+
+        // Handle numeric keypad press
+        function pressKey(num) {
+            errorMessage.classList.add('hidden');
+            if (pin.length < maxPinLength) {
+                pin += num;
+                updateDots();
+            }
+            
+            // Automatic submission when 4 digits are entered
+            if (pin.length === maxPinLength) {
+                setTimeout(submitPin, 200);
+            }
+        }
+
+        // Clear entire PIN
+        function clearPin() {
+            pin = '';
+            updateDots();
+            errorMessage.classList.add('hidden');
+        }
+
+        // Update dot states
+        function updateDots() {
+            for (let i = 1; i <= maxPinLength; i++) {
+                const dot = document.getElementById(`dot-${i}`);
+                if (i <= pin.length) {
+                    dot.className = "w-4 h-4 rounded-full border border-orange-500 bg-orange-500 shadow-lg shadow-orange-500/50 scale-110 transition-all duration-150";
+                } else {
+                    dot.className = "w-4 h-4 rounded-full border border-slate-700 bg-slate-800 transition-all duration-150";
+                }
+            }
+        }
+
+        // Submit PIN to API
+        async function submitPin() {
+            if (pin.length < 4) return;
+            
+            // Show loading animation on the Enter button
+            btnSubmit.disabled = true;
+            btnIcon.setAttribute('data-lucide', 'loader-2');
+            btnIcon.classList.add('animate-spin');
+            lucide.createIcons();
+
+            try {
+                const response = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password: pin })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    // Success! Redirect to home page
+                    window.location.href = '/';
+                } else {
+                    showError(data.error || 'Código incorrecto');
+                    clearPin();
+                }
+            } catch (err) {
+                console.error(err);
+                showError('Error de red al autenticar');
+                clearPin();
+            } finally {
+                btnSubmit.disabled = false;
+                btnIcon.setAttribute('data-lucide', 'arrow-right');
+                btnIcon.classList.remove('animate-spin');
+                lucide.createIcons();
+            }
+        }
+
+        function showError(msg) {
+            errorText.textContent = msg;
+            errorMessage.classList.remove('hidden');
+            
+            // Rumble animation on Dots Container on error
+            const dots = document.getElementById('dots-container');
+            dots.classList.add('animate-bounce');
+            setTimeout(() => {
+                dots.classList.remove('animate-bounce');
+            }, 500);
+        }
+
+        // Keyboard listener for physical numeric keyboard typing
+        document.addEventListener('keydown', (e) => {
+            if (e.key >= '0' && e.key <= '9') {
+                pressKey(e.key);
+            } else if (e.key === 'Backspace') {
+                pin = pin.slice(0, -1);
+                updateDots();
+                errorMessage.classList.add('hidden');
+            } else if (e.key === 'Enter') {
+                submitPin();
+            } else if (e.key === 'Escape') {
+                clearPin();
+            }
+        });
+    </script>
+</body>
+</html>

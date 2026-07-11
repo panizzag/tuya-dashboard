@@ -115,3 +115,5 @@ La aplicación es completamente stateless y está lista para ser desplegada en l
     *   `TUYA_CLIENT_ID`: Tu Access ID / Client ID de Tuya.
     *   `TUYA_CLIENT_SECRET`: Tu Access Secret / Client Secret de Tuya.
     *   `TUYA_BASE_URL`: `https://openapi.tuyaus.com` (U.S. West)
+    *   `PWD_LOGIN`: Tu PIN de seguridad de 4 dígitos para acceder al dashboard (ej. `6913`). Si no se define, se usará `6913` por defecto.
+

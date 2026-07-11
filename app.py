@@ -1,7 +1,7 @@
 import os
 import json
 import logging
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, redirect, make_response
 from tuya_api import TuyaAPI
 
 # Setup logging
@@ -11,6 +11,21 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 
 CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
+
+@app.before_request
+def check_authentication():
+    pwd_login = os.environ.get("PWD_LOGIN", "6913").strip()
+    
+    # Allow accessing static files, login page, and login API
+    if request.path in ["/login", "/api/login"] or request.path.startswith("/static/"):
+        return
+        
+    # Check authentication cookie
+    auth_token = request.cookies.get("login_token")
+    if auth_token != pwd_login:
+        if request.path.startswith("/api/"):
+            return jsonify({"success": False, "error": "No autorizado"}), 401
+        return redirect("/login")
 
 def load_config():
     """Loads configuration from environment variables or config.json."""
@@ -303,6 +318,58 @@ def index():
     config = load_config()
     is_configured = "client_id" in config and "client_secret" in config
     return render_template("index.html", is_configured=is_configured, config=config)
+
+@app.route("/login")
+def login_page():
+    return render_template("login.html")
+
+@app.route("/api/login", methods=["POST"])
+def api_login():
+    data = request.json or {}
+    password = data.get("password", "").strip()
+    pwd_login = os.environ.get("PWD_LOGIN", "6913").strip()
+    
+    if password == pwd_login:
+        response = make_response(jsonify({"success": True}))
+        # Set persistent login cookie for 30 days
+        response.set_cookie("login_token", pwd_login, max_age=30*24*60*60, httponly=True, samesite='Lax')
+        return response
+    else:
+        return jsonify({"success": False, "error": "Código PIN incorrecto"}), 401
+
+@app.route("/api/devices/<device_id>/commands", methods=["POST"])
+def send_device_commands(device_id):
+    # 1. Try credentials from Request Headers (localStorage client-side persistence)
+    client_id = request.headers.get("X-Tuya-Client-Id")
+    client_secret = request.headers.get("X-Tuya-Client-Secret")
+    base_url = request.headers.get("X-Tuya-Base-Url", "https://openapi.tuyaus.com")
+    
+    # 2. Fallback to loaded config (config.json + Environment variables)
+    if not client_id or not client_secret:
+        config = load_config()
+        client_id = config.get("client_id")
+        client_secret = config.get("client_secret")
+        base_url = config.get("base_url", "https://openapi.tuyaus.com")
+        
+    if not client_id or not client_secret:
+        return jsonify({"success": False, "error": "Tuya no está configurado todavía"}), 401
+        
+    try:
+        data = request.json or {}
+        commands = data.get("commands", [])
+        
+        if not commands:
+            return jsonify({"success": False, "error": "No se proporcionaron comandos"}), 400
+            
+        api = TuyaAPI(client_id, client_secret, base_url)
+        access_token, uid = api.get_access_token()
+        
+        result = api.send_device_commands(access_token, device_id, commands)
+        return jsonify({"success": True, "result": result})
+        
+    except Exception as e:
+        logger.error(f"Error sending commands to device {device_id}: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
 
 @app.route("/api/config", methods=["POST"])
 def configure():

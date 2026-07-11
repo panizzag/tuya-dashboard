@@ -1,6 +1,7 @@
 import hmac
 import hashlib
 import time
+import json
 import requests
 import logging
 
@@ -172,3 +173,35 @@ class TuyaAPI:
             return data.get("result", [])
         except requests.exceptions.RequestException as e:
             raise Exception(f"Network error fetching user devices: {e}")
+
+    def send_device_commands(self, access_token, device_id, commands):
+        """
+        Sends commands to a Tuya device.
+        Endpoint: POST /v1.0/iot-01/devices/{device_id}/commands
+        """
+        t = self._get_timestamp()
+        url_path = f"/v1.0/iot-01/devices/{device_id}/commands"
+        
+        # Serialize the body as compact JSON for signature calculation
+        body = json.dumps({"commands": commands}, separators=(',', ':'))
+        
+        sign = self._calculate_sign(t, "POST", url_path, body=body, access_token=access_token)
+        
+        headers = {
+            "client_id": self.client_id,
+            "sign": sign,
+            "t": t,
+            "sign_method": "HMAC-SHA256",
+            "access_token": access_token,
+            "Content-Type": "application/json"
+        }
+        
+        url = f"{self.base_url}{url_path}"
+        try:
+            logger.info(f"Sending commands to device {device_id} (url: {url})")
+            response = requests.post(url, headers=headers, data=body, timeout=15)
+            response.raise_for_status()
+            data = response.json()
+            return data
+        except requests.exceptions.RequestException as e:
+            raise Exception(f"Network error sending commands: {e}")
