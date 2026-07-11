@@ -177,10 +177,12 @@ class TuyaAPI:
     def send_device_commands(self, access_token, device_id, commands):
         """
         Sends commands to a Tuya device.
-        Endpoint: POST /v1.0/iot-01/devices/{device_id}/commands
+        Endpoint: POST /v1.0/devices/{device_id}/commands (Standard) or POST /v1.0/iot-03/devices/{device_id}/commands
         """
         t = self._get_timestamp()
-        url_path = f"/v1.0/iot-01/devices/{device_id}/commands"
+        
+        # Standard device command control endpoint is /v1.0/devices/{device_id}/commands
+        url_path = f"/v1.0/devices/{device_id}/commands"
         
         # Serialize the body as compact JSON for signature calculation
         body = json.dumps({"commands": commands}, separators=(',', ':'))
@@ -202,6 +204,20 @@ class TuyaAPI:
             response = requests.post(url, headers=headers, data=body, timeout=15)
             response.raise_for_status()
             data = response.json()
+            
+            # If standard /v1.0/devices/ fails with path error, we can try /v1.0/iot-03/devices/ fallback
+            if not data.get("success") and "uri" in str(data.get("msg", "")).lower():
+                logger.warning("Standard control endpoint failed with URI error. Trying iot-03 fallback...")
+                t = self._get_timestamp()
+                url_path_fallback = f"/v1.0/iot-03/devices/{device_id}/commands"
+                sign_fallback = self._calculate_sign(t, "POST", url_path_fallback, body=body, access_token=access_token)
+                headers["sign"] = sign_fallback
+                headers["t"] = t
+                url_fallback = f"{self.base_url}{url_path_fallback}"
+                response = requests.post(url_fallback, headers=headers, data=body, timeout=15)
+                response.raise_for_status()
+                data = response.json()
+                
             return data
         except requests.exceptions.RequestException as e:
             raise Exception(f"Network error sending commands: {e}")
