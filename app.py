@@ -467,6 +467,306 @@ def logout():
             return jsonify({"success": False, "error": str(e)}), 500
     return jsonify({"success": True})
 
+# --- ALEXA SKILL INTEGRATION ---
+# Endpoint to securely handle Alexa Skill requests using a simple secret token for personal security
+@app.route("/api/alexa", methods=["POST"])
+def alexa_skill():
+    # Simple token validation (optional but highly recommended for private endpoints in Render)
+    expected_token = os.environ.get("PWD_LOGIN", "6913").strip()
+    provided_token = request.args.get("token", "").strip()
+    
+    # If the user has custom PWD_LOGIN but doesn't pass token=XXXX in Alexa URL, deny access.
+    # This prevents anyone from calling your public Render URL's Alexa endpoint.
+    if expected_token and provided_token != expected_token:
+        # Return a standard unauthorized response
+        return jsonify({
+            "version": "1.0",
+            "response": {
+                "outputSpeech": {
+                    "type": "PlainText",
+                    "text": "Acceso no autorizado. Por favor configura el token correcto en la consola de Alexa."
+                },
+                "shouldEndSession": True
+            }
+        }), 401
+
+    request_data = request.json or {}
+    alexa_request = request_data.get("request", {})
+    request_type = alexa_request.get("type", "LaunchRequest")
+    
+    # Base Alexa response structure
+    alexa_response = {
+        "version": "1.0",
+        "response": {
+            "shouldEndSession": True
+        }
+    }
+
+    try:
+        # Load Tuya configuration (from env vars or config.json)
+        config = load_config()
+        client_id = config.get("client_id")
+        client_secret = config.get("client_secret")
+        base_url = config.get("base_url", "https://openapi.tuyaus.com")
+        
+        if not client_id or not client_secret:
+            alexa_response["response"]["outputSpeech"] = {
+                "type": "PlainText",
+                "text": "El panel de control todavía no está configurado con tus credenciales de Tuya."
+            }
+            return jsonify(alexa_response)
+
+        api = TuyaAPI(client_id, client_secret, base_url)
+        access_token, uid = api.get_access_token()
+        raw_devices = api.get_devices(access_token, uid)
+        
+        sensors = []
+        others = []
+        for dev in raw_devices:
+            parsed = parse_sensor_device(dev)
+            if parsed["is_sensor"]:
+                sensors.append(parsed)
+            else:
+                others.append(parsed)
+                
+    except Exception as e:
+        logger.error(f"Alexa Tuya integration error: {e}")
+        alexa_response["response"]["outputSpeech"] = {
+            "type": "PlainText",
+            "text": f"Hubo un error al conectar con la nube de Tuya: {str(e)}"
+        }
+        return jsonify(alexa_response)
+
+    # 1. LAUNCH REQUEST ("Alexa, abre mi panel de alarma" or "Alexa, abre panel de sensores")
+    if request_type == "LaunchRequest":
+        # Check alarm readiness
+        # Door/window (mcs) and vibration (zd) sensors are associated
+        unsafe_sensors = []
+        associated_count = 0
+        
+        for s in sensors:
+            # For Alexa (without client-side localStorage), we auto-associate mcs and zd
+            if s["category"] in ["mcs", "zd"]:
+                associated_count += 1
+                if not s["online"]:
+                    unsafe_sensors.append(f"{s['name']} (fuera de línea)")
+                else:
+                    desc = s["state_description"].toLowerCase() if hasattr(s["state_description"], "toLowerCase") else str(s["state_description"]).lower()
+                    if "abierto" in desc or "vibración" in desc:
+                        unsafe_sensors.append(s["name"])
+
+        # Check if there is an active alarm device in the system
+        alarm_host = sensors.find(lambda x: x["category"] == "mal" or x["sensor_icon"] == "shield") if hasattr(sensors, "find") else next((x for x in sensors if x["category"] == "mal"), None)
+        alarm_state = "desarmado"
+        if alarm_host and alarm_host.get("status_raw") and alarm_host["status_raw"].get("master_mode"):
+            mode = alarm_host["status_raw"]["master_mode"]
+            alarm_state = "armado en casa" if mode == "home" else ("armado ausente" if mode in ["arm", "armed"] else "desarmado")
+
+        if len(unsafe_sensors) == 0:
+            speech_text = f"Hola. Tu sistema de alarma está actualmente {alarm_state}. Todos los {associated_count} sensores asociados están en orden y cerrados. La alarma está lista para ser activada."
+        else:
+            speech_text = f"Hola. El sistema está {alarm_state}, pero no está listo para ser armado de forma segura. Hay {len(unsafe_sensors)} sensores abiertos: {', '.join(unsafe_sensors)}. Por favor ciérralos antes de activar la alarma."
+
+        # Add APL visual directive if supported by the Echo Hub
+        # Check if device supports APL
+        supports_apl = "Alexa.Presentation.APL" in request_data.get("context", {}).get("System", {}).get("device", {}).get("supportedInterfaces", {})
+        
+        if supports_apl:
+            # We'll return an APL directive with a clean, visual state
+            apl_doc = {
+                "type": "APL",
+                "version": "1.8",
+                "import": [
+                    {
+                        "name": "alexa-layouts",
+                        "version": "1.5.0"
+                    }
+                ],
+                "mainTemplate": {
+                    "parameters": ["payload"],
+                    "items": [
+                        {
+                            "type": "Container",
+                            "width": "100%",
+                            "height": "100%",
+                            "backgroundColor": "${payload.bg_color}",
+                            "justifyContent": "center",
+                            "alignItems": "center",
+                            "padding": "20dp",
+                            "items": [
+                                {
+                                    "type": "Text",
+                                    "text": "${payload.title}",
+                                    "fontSize": "32dp",
+                                    "fontWeight": "bold",
+                                    "color": "#ffffff",
+                                    "textAlign": "center"
+                                },
+                                {
+                                    "type": "Text",
+                                    "text": "${payload.description}",
+                                    "fontSize": "20dp",
+                                    "color": "#e2e8f0",
+                                    "textAlign": "center",
+                                    "marginTop": "15dp"
+                                }
+                            ]
+                        }
+                    ]
+                }
+            }
+            
+            bg_color = "#10b981" if len(unsafe_sensors) == 0 else "#ef4444"
+            title = "SISTEMA LISTO" if len(unsafe_sensors) == 0 else "SISTEMA ABIERTO"
+            desc = f"Alarma {alarm_state.upper()}.\n{associated_count} sensores bajo control." if len(unsafe_sensors) == 0 else f"No se puede armar.\nZonas abiertas: {', '.join(unsafe_sensors)}"
+            
+            alexa_response["response"]["directives"] = [{
+                "type": "Alexa.Presentation.APL.RenderDocument",
+                "document": apl_doc,
+                "datasources": {
+                    "payload": {
+                        "bg_color": bg_color,
+                        "title": title,
+                        "description": desc
+                    }
+                }
+            }]
+
+        alexa_response["response"]["outputSpeech"] = {
+            "type": "PlainText",
+            "text": speech_text
+        }
+
+    # 2. INTENT REQUEST (Handles custom intents we'll define)
+    elif request_type == "IntentRequest":
+        intent_name = alexa_request.get("intent", {}).get("name")
+        
+        # Intent: GetStatusIntent ("¿Cómo están los sensores?" or "¿Cuál es el estado de la alarma?")
+        if intent_name == "GetStatusIntent":
+            unsafe_sensors = []
+            for s in sensors:
+                if s["category"] in ["mcs", "zd"]:
+                    desc = str(s["state_description"]).lower()
+                    if "abierto" in desc or "vibración" in desc or not s["online"]:
+                        unsafe_sensors.append(s["name"])
+            
+            if len(unsafe_sensors) == 0:
+                speech_text = f"El sistema de seguridad está en perfectas condiciones. Todos los sensores están cerrados."
+            else:
+                speech_text = f"Atención, tienes {len(unsafe_sensors)} zonas abiertas: {', '.join(unsafe_sensors)}."
+
+            alexa_response["response"]["outputSpeech"] = {
+                "type": "PlainText",
+                "text": speech_text
+            }
+            
+        # Intent: ArmAlarmIntent ("Arma la alarma en modo ausente" or "Activa la alarma en casa")
+        elif intent_name == "ArmAlarmIntent":
+            # Check for slots
+            slots = alexa_request.get("intent", {}).get("slots", {})
+            mode_slot = slots.get("mode", {}).get("value", "ausente").lower()
+            
+            target_mode = "arm" if "ausente" in mode_slot or "total" in mode_slot else "home"
+            mode_label = "Armado Ausente" if target_mode == "arm" else "Armado en Casa"
+            
+            # Check if any associated sensors are open first
+            unsafe_sensors = []
+            for s in sensors:
+                if s["category"] in ["mcs", "zd"]:
+                    desc = str(s["state_description"]).lower()
+                    if "abierto" in desc or "vibración" in desc or not s["online"]:
+                        unsafe_sensors.append(s["name"])
+
+            if len(unsafe_sensors) > 0 and target_mode == "arm":
+                speech_text = f"No puedo armar la alarma en modo Ausente porque hay sensores abiertos: {', '.join(unsafe_sensors)}. Por favor ciérralos e inténtalo de nuevo."
+            else:
+                # Find alarm device
+                alarm_host = next((x for x in (sensors + others) if x["category"] == "mal"), None)
+                if alarm_host:
+                    try:
+                        commands = [{"code": "master_mode", "value": target_mode}]
+                        api.send_device_commands(access_token, alarm_host["id"], commands)
+                        speech_text = f"Entendido, he enviado el comando para activar la alarma en modo {mode_label}."
+                    except Exception as e:
+                        speech_text = f"No se pudo completar la operación en Tuya Cloud: {str(e)}"
+                else:
+                    speech_text = f"Comando simulado. El panel ha sido armado en modo {mode_label}."
+
+            alexa_response["response"]["outputSpeech"] = {
+                "type": "PlainText",
+                "text": speech_text
+            }
+
+        # Intent: DisarmAlarmIntent ("Desarma la alarma" or "Desactiva el panel")
+        elif intent_name == "DisarmAlarmIntent":
+            # Find alarm device
+            alarm_host = next((x for x in (sensors + others) if x["category"] == "mal"), None)
+            if alarm_host:
+                try:
+                    commands = [{"code": "master_mode", "value": "disarmed"}]
+                    api.send_device_commands(access_token, alarm_host["id"], commands)
+                    speech_text = "Sistema de seguridad desarmado exitosamente."
+                except Exception as e:
+                    speech_text = f"Error al desarmar en la nube: {str(e)}"
+            else:
+                speech_text = "Comando simulado. El panel ha sido desarmado."
+
+            alexa_response["response"]["outputSpeech"] = {
+                "type": "PlainText",
+                "text": speech_text
+            }
+
+        else:
+            alexa_response["response"]["outputSpeech"] = {
+                "type": "PlainText",
+                "text": "Disculpa, no entiendo ese comando para el panel de alarma."
+            }
+
+    # 3. ALEXA PRESENTATION LANGUAGE (APL) USER EVENT REQUEST
+    # Triggers when a button on the visual APL Skill screen OR the Widget is touched/tapped
+    elif request_type == "Alexa.Presentation.APL.UserEvent":
+        arguments = alexa_request.get("arguments", [])
+        action = arguments[0] if len(arguments) > 0 else ""
+        
+        # User tapped "arm_away", "arm_home", or "disarm" buttons on the screen or widget
+        if action in ["arm", "home", "disarmed"]:
+            mode_label = "Armado Ausente" if action == "arm" else ("Armado en Casa" if action == "home" else "Desarmado")
+            
+            # Find alarm device
+            alarm_host = next((x for x in (sensors + others) if x["category"] == "mal"), None)
+            
+            success = True
+            error_details = ""
+            
+            if alarm_host:
+                try:
+                    commands = [{"code": "master_mode", "value": action}]
+                    api.send_device_commands(access_token, alarm_host["id"], commands)
+                except Exception as e:
+                    success = False
+                    error_details = str(e)
+            
+            if success:
+                speech_text = f"Comando ejecutado exitosamente. El panel ha sido cambiado a {mode_label}."
+            else:
+                speech_text = f"No se pudo completar el comando en la nube de Tuya: {error_details}"
+                
+            alexa_response["response"]["outputSpeech"] = {
+                "type": "PlainText",
+                "text": speech_text
+            }
+            
+            # Update the widget/screen locally in real-time by pushing dynamic values or APL update
+            # (Alexa handles returning a visual feedback speech)
+            
+        else:
+            alexa_response["response"]["outputSpeech"] = {
+                "type": "PlainText",
+                "text": "Comando táctil no reconocido."
+            }
+
+    return jsonify(alexa_response)
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     # Bind to 0.0.0.0 to make it accessible inside local networks if needed
