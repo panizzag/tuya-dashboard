@@ -16,8 +16,9 @@ CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.j
 def check_authentication():
     pwd_login = os.environ.get("PWD_LOGIN", "6913").strip()
     
-    # Allow accessing static files, login page, and login API
-    if request.path in ["/login", "/api/login"] or request.path.startswith("/static/"):
+    # Allow accessing static files, login page, login API, and the Alexa endpoint
+    # (The Alexa endpoint has its own token-based auth via ?token= and is called by Amazon, not the browser)
+    if request.path in ["/login", "/api/login", "/api/alexa"] or request.path.startswith("/static/"):
         return
         
     # Check authentication cookie
