@@ -1,0 +1,23 @@
+# Virtual Environment
+venv/
+.venv/
+env/
+ENV/
+
+# Python caching
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Configuration files with secrets
+config.json
+
+# IDEs and Editors
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+.DS_Store

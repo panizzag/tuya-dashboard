@@ -1,0 +1,1135 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard de Sensores Tuya / SmartLife</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide Icons for premium icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #f1f1f1;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+    </style>
+</head>
+<body class="bg-slate-50 min-h-screen text-slate-800 flex flex-col">
+
+    <!-- Header / Navbar -->
+    <header class="bg-white border-b border-slate-200 sticky top-0 z-40 shadow-sm">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+                <div class="bg-orange-500 text-white p-2 rounded-lg flex items-center justify-center">
+                    <i data-lucide="home" class="w-6 h-6"></i>
+                </div>
+                <div>
+                    <h1 class="font-bold text-lg text-slate-900 leading-tight">Tuya Smart Home</h1>
+                    <p class="text-xs text-slate-500 font-medium">Dashboard de Sensores</p>
+                </div>
+            </div>
+            
+            <div class="flex items-center space-x-3" id="nav-actions">
+                <!-- Status & Auto-refresh -->
+                <div id="refresh-controls" class="hidden sm:flex items-center space-x-2 bg-slate-100 p-1.5 rounded-lg border border-slate-200">
+                    <span class="text-xs text-slate-500 font-medium px-2">Autorefresco:</span>
+                    <select id="auto-refresh-select" class="bg-white border-0 text-xs font-semibold text-slate-700 rounded px-2 py-1 outline-none focus:ring-1 focus:ring-orange-500">
+                        <option value="0">Desactivado</option>
+                        <option value="30">30 seg</option>
+                        <option value="60" selected>1 min</option>
+                        <option value="300">5 min</option>
+                    </select>
+                </div>
+
+                <button id="manual-refresh-btn" class="hidden bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 p-2 rounded-lg transition-colors flex items-center justify-center font-medium text-sm space-x-1.5 focus:outline-none focus:ring-2 focus:ring-orange-500">
+                    <i data-lucide="refresh-cw" id="refresh-icon" class="w-4 h-4"></i>
+                    <span class="hidden md:inline">Actualizar</span>
+                </button>
+
+                <button id="settings-btn" class="bg-slate-800 hover:bg-slate-700 text-white p-2 rounded-lg transition-colors flex items-center justify-center font-medium text-sm space-x-1.5 focus:outline-none focus:ring-2 focus:ring-slate-900">
+                    <i data-lucide="settings" class="w-4 h-4"></i>
+                    <span class="hidden md:inline">Credenciales</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <main class="flex-grow max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full">
+
+        <!-- Toast Notifications Container -->
+        <div id="toast-container" class="fixed bottom-5 right-5 z-50 flex flex-col space-y-2 pointer-events-none"></div>
+
+        <!-- 1. SETUP / CONFIGURATION CARD (If not configured or when settings clicked) -->
+        <div id="setup-card" class="{% if is_configured %}hidden{% endif %} max-w-md mx-auto bg-white rounded-2xl border border-slate-200 shadow-xl overflow-hidden transition-all duration-300">
+            <div class="p-6 sm:p-8">
+                <div class="text-center mb-6">
+                    <div class="bg-orange-100 text-orange-600 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <i data-lucide="key-round" class="w-8 h-8"></i>
+                    </div>
+                    <h2 class="text-2xl font-bold text-slate-900">Credenciales de Tuya</h2>
+                    <p class="text-sm text-slate-500 mt-2">Conéctate a tu proyecto en Tuya IoT Cloud Platform para buscar y visualizar tus sensores.</p>
+                </div>
+
+                <form id="config-form" class="space-y-5">
+                    <div>
+                        <label for="client_id" class="block text-xs font-semibold text-slate-600 uppercase tracking-wider mb-2">Access ID / Client ID</label>
+                        <div class="relative rounded-lg shadow-sm">
+                            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                                <i data-lucide="fingerprint" class="w-5 h-5"></i>
+                            </div>
+                            <input type="text" id="client_id" name="client_id" required 
+                                value="{{ config.client_id or '' }}"
+                                class="block w-full pl-10 pr-3 py-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500 text-sm font-mono placeholder-slate-400 transition-shadow" 
+                                placeholder="Ingresa tu Client ID (e.g. yq39uw...)">
+                        </div>
+                    </div>
+
+                    <div>
+                        <label for="client_secret" class="block text-xs font-semibold text-slate-600 uppercase tracking-wider mb-2">Access Secret / Client Secret</label>
+                        <div class="relative rounded-lg shadow-sm">
+                            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                                <i data-lucide="lock" class="w-5 h-5"></i>
+                            </div>
+                            <input type="password" id="client_secret" name="client_secret" required 
+                                value="{{ config.client_secret or '' }}"
+                                class="block w-full pl-10 pr-3 py-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500 text-sm font-mono placeholder-slate-400 transition-shadow" 
+                                placeholder="Ingresa tu Client Secret">
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-600 uppercase tracking-wider mb-2">Endpoint de Región</label>
+                        <div class="grid grid-cols-1 gap-2">
+                            <label class="flex items-center p-3 rounded-lg border border-orange-500 bg-orange-50/50 cursor-pointer transition-all">
+                                <input type="radio" name="base_url" value="https://openapi.tuyaus.com" checked
+                                    class="h-4 w-4 text-orange-600 border-slate-300 focus:ring-orange-500">
+                                <div class="ml-3">
+                                    <span class="block text-sm font-bold text-slate-800">Western America (US West)</span>
+                                    <span class="block text-xs text-slate-500">openapi.tuyaus.com</span>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="pt-2">
+                        <button type="submit" id="save-config-btn" 
+                            class="w-full bg-orange-500 hover:bg-orange-600 text-white font-semibold py-3 px-4 rounded-lg shadow-md hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 transition-all flex items-center justify-center space-x-2">
+                            <i data-lucide="check-circle" class="w-5 h-5"></i>
+                            <span>Guardar y Conectar</span>
+                        </button>
+                    </div>
+                </form>
+
+                <div class="mt-6 border-t border-slate-100 pt-5 text-xs text-slate-400 leading-relaxed">
+                    <p class="font-semibold text-slate-500 mb-1">¿Dónde encuentro estas credenciales?</p>
+                    <ol class="list-decimal list-inside space-y-1">
+                        <li>Inicia sesión en <a href="https://iot.tuya.com/" target="_blank" class="text-orange-500 hover:underline font-medium">Tuya IoT Platform</a></li>
+                        <li>Crea un proyecto en Cloud -> Development -> Create Cloud Project</li>
+                        <li>Vincula tu cuenta de app SmartLife o Tuya (Devices -> Link Tuya App Account)</li>
+                        <li>Copia el Access ID (Client ID) y Access Secret (Client Secret) de la vista general del proyecto</li>
+                    </ol>
+                </div>
+            </div>
+        </div>
+
+        <!-- 2. DASHBOARD (Shown when configured) -->
+        <div id="dashboard-view" class="{% if not is_configured %}hidden{% endif %} space-y-6">
+            
+            <!-- Alarm Readiness Banner -->
+            <div id="alarm-banner" class="hidden transition-all duration-300"></div>
+            
+            <!-- Quick Metrics / Status Cards -->
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+                <!-- Total Sensors -->
+                <div class="bg-white rounded-2xl border border-slate-200 p-5 flex items-center space-x-4 shadow-sm">
+                    <div class="bg-blue-50 text-blue-600 p-3 rounded-xl">
+                        <i data-lucide="cpu" class="w-6 h-6"></i>
+                    </div>
+                    <div>
+                        <p class="text-sm font-medium text-slate-500">Total Sensores</p>
+                        <p class="text-2xl font-bold text-slate-900 mt-1" id="stat-total-sensors">-</p>
+                    </div>
+                </div>
+
+                <!-- Open / Active Sensors -->
+                <div class="bg-white rounded-2xl border border-slate-200 p-5 flex items-center space-x-4 shadow-sm">
+                    <div class="bg-red-50 text-red-600 p-3 rounded-xl" id="stat-active-bg">
+                        <i data-lucide="bell" class="w-6 h-6"></i>
+                    </div>
+                    <div>
+                        <p class="text-sm font-medium text-slate-500">Alertas / Abiertos</p>
+                        <p class="text-2xl font-bold text-slate-900 mt-1" id="stat-active-sensors">-</p>
+                    </div>
+                </div>
+
+                <!-- Low Battery Sensors -->
+                <div class="bg-white rounded-2xl border border-slate-200 p-5 flex items-center space-x-4 shadow-sm">
+                    <div class="bg-amber-50 text-amber-600 p-3 rounded-xl" id="stat-battery-bg">
+                        <i data-lucide="battery-warning" class="w-6 h-6"></i>
+                    </div>
+                    <div>
+                        <p class="text-sm font-medium text-slate-500">Batería Baja</p>
+                        <p class="text-2xl font-bold text-slate-900 mt-1" id="stat-low-battery">-</p>
+                    </div>
+                </div>
+
+                <!-- Offline Sensors -->
+                <div class="bg-white rounded-2xl border border-slate-200 p-5 flex items-center space-x-4 shadow-sm">
+                    <div class="bg-slate-100 text-slate-600 p-3 rounded-xl">
+                        <i data-lucide="wifi-off" class="w-6 h-6"></i>
+                    </div>
+                    <div>
+                        <p class="text-sm font-medium text-slate-500">Fuera de Línea</p>
+                        <p class="text-2xl font-bold text-slate-900 mt-1" id="stat-offline-sensors">-</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Filters & Controls Bar -->
+            <div class="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-sm">
+                <!-- Filters tabs -->
+                <div class="flex flex-wrap gap-2" id="filter-tabs">
+                    <button data-filter="all" class="filter-tab px-4 py-2 text-sm font-medium rounded-lg bg-orange-500 text-white transition-all shadow-sm">
+                        Todos
+                    </button>
+                    <button data-filter="alarm-only" class="filter-tab px-4 py-2 text-sm font-medium rounded-lg text-slate-600 hover:bg-slate-50 hover:text-slate-800 transition-all border border-transparent">
+                        Sólo Alarma
+                    </button>
+                    <button data-filter="active" class="filter-tab px-4 py-2 text-sm font-medium rounded-lg text-slate-600 hover:bg-slate-50 hover:text-slate-800 transition-all border border-transparent">
+                        Abiertos / Activos
+                    </button>
+                    <button data-filter="low-battery" class="filter-tab px-4 py-2 text-sm font-medium rounded-lg text-slate-600 hover:bg-slate-50 hover:text-slate-800 transition-all border border-transparent">
+                        Batería Baja
+                    </button>
+                    <button data-filter="offline" class="filter-tab px-4 py-2 text-sm font-medium rounded-lg text-slate-600 hover:bg-slate-50 hover:text-slate-800 transition-all border border-transparent">
+                        Fuera de línea
+                    </button>
+                </div>
+                
+                <!-- Search and Stats indicator -->
+                <div class="relative w-full md:w-72">
+                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                        <i data-lucide="search" class="w-4 h-4"></i>
+                    </div>
+                    <input type="text" id="sensor-search" placeholder="Buscar sensor..." 
+                        class="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-lg text-sm bg-slate-50/50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all">
+                </div>
+            </div>
+
+            <!-- Loading Spinner State -->
+            <div id="loading-state" class="py-20 text-center flex flex-col items-center justify-center space-y-4">
+                <div class="relative w-12 h-12">
+                    <div class="absolute border-4 border-slate-100 rounded-full w-12 h-12"></div>
+                    <div class="absolute border-4 border-t-orange-500 border-r-transparent border-b-transparent border-l-transparent rounded-full w-12 h-12 animate-spin"></div>
+                </div>
+                <p class="text-slate-500 font-medium text-sm">Consultando estado de sensores en Tuya Cloud...</p>
+            </div>
+
+            <!-- Empty State -->
+            <div id="empty-state" class="hidden bg-white rounded-2xl border border-slate-200 py-16 px-4 text-center max-w-lg mx-auto shadow-sm">
+                <div class="bg-slate-100 text-slate-500 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <i data-lucide="cpu" class="w-8 h-8"></i>
+                </div>
+                <h3 class="text-lg font-bold text-slate-900" id="empty-state-title">No se encontraron sensores</h3>
+                <p class="text-sm text-slate-500 mt-2" id="empty-state-desc">Asegúrate de que tus sensores estén vinculados a tu cuenta de SmartLife y que tu proyecto de Tuya Cloud tenga asignadas las APIs correspondientes.</p>
+                <button id="empty-refresh-btn" class="mt-5 inline-flex items-center space-x-1.5 bg-orange-500 hover:bg-orange-600 text-white font-medium text-sm px-4 py-2 rounded-lg shadow-sm transition-all focus:outline-none">
+                    <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+                    <span>Reintentar</span>
+                </button>
+            </div>
+
+            <!-- Error Banner State -->
+            <div id="error-banner" class="hidden bg-red-50 border border-red-200 rounded-2xl p-6 flex flex-col sm:flex-row items-start space-y-4 sm:space-y-0 sm:space-x-4 max-w-2xl mx-auto shadow-sm">
+                <div class="bg-red-100 text-red-600 p-3 rounded-xl shrink-0">
+                    <i data-lucide="alert-triangle" class="w-6 h-6"></i>
+                </div>
+                <div class="flex-grow">
+                    <h4 class="font-bold text-slate-900">Error de conexión</h4>
+                    <p class="text-sm text-slate-600 mt-1 leading-relaxed" id="error-message">Ha ocurrido un error al intentar conectarse con el servidor de Tuya Cloud.</p>
+                    <div class="mt-4 flex flex-wrap gap-2">
+                        <button id="error-reconnect-btn" class="bg-red-600 hover:bg-red-700 text-white text-xs font-semibold px-4 py-2 rounded-lg transition-all shadow-sm">
+                            Reintentar Conexión
+                        </button>
+                        <button id="error-settings-btn" class="bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 text-xs font-semibold px-4 py-2 rounded-lg transition-all">
+                            Modificar Credenciales
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sensors Grid -->
+            <div id="sensors-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <!-- Javascript will inject cards here -->
+            </div>
+
+            <!-- Other Devices Section (Collapsible) -->
+            <div id="others-section" class="hidden space-y-4 pt-4 border-t border-slate-200">
+                <button id="toggle-others-btn" class="flex items-center justify-between w-full bg-white hover:bg-slate-50 border border-slate-200 px-5 py-4 rounded-xl shadow-sm transition-all text-left">
+                    <div class="flex items-center space-x-3">
+                        <div class="bg-slate-100 text-slate-600 p-2 rounded-lg">
+                            <i data-lucide="layers" class="w-5 h-5"></i>
+                        </div>
+                        <div>
+                            <h4 class="font-bold text-slate-800 text-base">Otros Dispositivos de Tuya</h4>
+                            <p class="text-xs text-slate-500 font-medium mt-0.5" id="others-count">Detectados 0 dispositivos adicionales</p>
+                        </div>
+                    </div>
+                    <i data-lucide="chevron-down" id="others-chevron" class="w-5 h-5 text-slate-500 transition-transform"></i>
+                </button>
+
+                <div id="others-grid" class="hidden grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pt-2">
+                    <!-- Javascript will inject other device cards here -->
+                </div>
+            </div>
+
+        </div>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-white border-t border-slate-200 py-6 mt-12">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-400">
+            <div class="flex items-center space-x-2">
+                <span class="bg-slate-100 text-slate-500 px-2 py-1 rounded font-semibold font-mono">v1.0.0</span>
+                <span>Dashboard de Monitoreo Tuya IoT</span>
+            </div>
+            <div>
+                Desarrollado en Python con Flask y Tailwind CSS
+            </div>
+        </div>
+    </footer>
+
+    <!-- JS Logic -->
+    <script>
+        // DOM Elements
+        const setupCard = document.getElementById('setup-card');
+        const dashboardView = document.getElementById('dashboard-view');
+        const configForm = document.getElementById('config-form');
+        const sensorsGrid = document.getElementById('sensors-grid');
+        const othersSection = document.getElementById('others-section');
+        const othersGrid = document.getElementById('others-grid');
+        const othersCountText = document.getElementById('others-count');
+        const toggleOthersBtn = document.getElementById('toggle-others-btn');
+        const othersChevron = document.getElementById('others-chevron');
+        
+        const loadingState = document.getElementById('loading-state');
+        const emptyState = document.getElementById('empty-state');
+        const emptyStateTitle = document.getElementById('empty-state-title');
+        const emptyStateDesc = document.getElementById('empty-state-desc');
+        const errorBanner = document.getElementById('error-banner');
+        const errorMessage = document.getElementById('error-message');
+        
+        const manualRefreshBtn = document.getElementById('manual-refresh-btn');
+        const refreshIcon = document.getElementById('refresh-icon');
+        const refreshControls = document.getElementById('refresh-controls');
+        const autoRefreshSelect = document.getElementById('auto-refresh-select');
+        const settingsBtn = document.getElementById('settings-btn');
+        const emptyRefreshBtn = document.getElementById('empty-refresh-btn');
+        const errorReconnectBtn = document.getElementById('error-reconnect-btn');
+        const errorSettingsBtn = document.getElementById('error-settings-btn');
+        const sensorSearch = document.getElementById('sensor-search');
+        
+        // Stats elements
+        const statTotalSensors = document.getElementById('stat-total-sensors');
+        const statActiveSensors = document.getElementById('stat-active-sensors');
+        const statLowBattery = document.getElementById('stat-low-battery');
+        const statOfflineSensors = document.getElementById('stat-offline-sensors');
+        const statActiveBg = document.getElementById('stat-active-bg');
+        const statBatteryBg = document.getElementById('stat-battery-bg');
+
+        // App state
+        let devicesData = { sensors: [], others: [] };
+        let activeFilter = 'all';
+        let searchQuery = '';
+        let isRefreshing = false;
+        let refreshIntervalId = null;
+
+        // Load associated sensors from local storage
+        let associatedSensorIds = localStorage.getItem('associated_sensor_ids');
+        if (associatedSensorIds === null) {
+            associatedSensorIds = null; // Will auto-populate from fetched devices
+        } else {
+            try {
+                associatedSensorIds = JSON.parse(associatedSensorIds);
+            } catch (e) {
+                associatedSensorIds = null;
+            }
+        }
+
+        // Toggle sensor alarm association
+        function toggleAlarmAssociation(sensorId) {
+            if (associatedSensorIds === null) {
+                associatedSensorIds = [];
+            }
+            const index = associatedSensorIds.indexOf(sensorId);
+            if (index === -1) {
+                associatedSensorIds.push(sensorId);
+                showToast('Sensor asociado a la alarma', 'success');
+            } else {
+                associatedSensorIds.splice(index, 1);
+                showToast('Sensor desasociado de la alarma', 'info');
+            }
+            localStorage.setItem('associated_sensor_ids', JSON.stringify(associatedSensorIds));
+            
+            // Re-render and update status
+            renderDashboard();
+        }
+
+        // Update Alarm status banner
+        function updateAlarmStatus(sensors) {
+            const alarmBanner = document.getElementById('alarm-banner');
+            if (!sensors || sensors.length === 0) {
+                alarmBanner.classList.add('hidden');
+                return;
+            }
+
+            if (associatedSensorIds === null) {
+                // Not yet populated
+                return;
+            }
+
+            const associatedSensors = sensors.filter(s => associatedSensorIds.includes(s.id));
+
+            if (associatedSensors.length === 0) {
+                alarmBanner.classList.remove('hidden');
+                alarmBanner.className = "bg-slate-100 border border-slate-200 rounded-2xl p-5 flex items-center justify-between shadow-sm transition-all";
+                alarmBanner.innerHTML = `
+                    <div class="flex items-center space-x-4">
+                        <div class="bg-slate-200 text-slate-500 p-3 rounded-2xl">
+                            <i data-lucide="shield-alert" class="w-8 h-8"></i>
+                        </div>
+                        <div>
+                            <h3 class="text-base font-bold text-slate-800 leading-tight">Sin Sensores Asociados</h3>
+                            <p class="text-xs text-slate-500 mt-1">Asocia al menos un sensor a la alarma usando el botón "Monitorear" en las tarjetas.</p>
+                        </div>
+                    </div>
+                `;
+                refreshIcons();
+                return;
+            }
+
+            // Find all sensors that are NOT in ready state (i.e. open, alarmed, vibrating, or offline)
+            const unsafeSensors = associatedSensors.filter(s => {
+                if (!s.online) return true; // Offline is unsafe
+                const desc = s.state_description.toLowerCase();
+                return desc.includes('abierto') || 
+                       desc.includes('movimiento detectado') || 
+                       desc.includes('fuga') || 
+                       desc.includes('humo') || 
+                       desc.includes('gas') || 
+                       desc.includes('sos') || 
+                       desc.includes('presencia detectada') || 
+                       desc.includes('vibración detectada');
+            });
+
+            alarmBanner.classList.remove('hidden');
+
+            if (unsafeSensors.length === 0) {
+                // All associated sensors are ready
+                alarmBanner.className = "bg-gradient-to-r from-emerald-500 to-teal-600 text-white rounded-2xl p-5 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-md transition-all border-0";
+                alarmBanner.innerHTML = `
+                    <div class="flex items-center space-x-4 text-center sm:text-left">
+                        <div class="bg-white/10 text-white p-3 rounded-xl backdrop-blur-sm animate-pulse">
+                            <i data-lucide="shield-check" class="w-8 h-8"></i>
+                        </div>
+                        <div>
+                            <h3 class="text-lg font-black uppercase tracking-wide">Alarma Lista para Activar</h3>
+                            <p class="text-xs text-emerald-100 mt-1 font-medium">${associatedSensors.length} sensores asociados están cerrados (seguros) y en línea.</p>
+                        </div>
+                    </div>
+                    <div class="bg-white text-emerald-700 font-extrabold px-4 py-2.5 rounded-xl text-center shadow-lg shrink-0 select-none text-xs uppercase tracking-wider">
+                        🟢 Listo para Armar
+                    </div>
+                `;
+            } else {
+                // Some associated sensors are open or offline
+                alarmBanner.className = "bg-red-50 border border-red-200 text-red-800 rounded-2xl p-5 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-5 shadow-sm transition-all";
+                
+                const unsafeListHtml = unsafeSensors.map(s => {
+                    const reason = !s.online ? 'Fuera de Línea' : s.state_description;
+                    return `
+                        <div class="inline-flex items-center space-x-1.5 bg-red-100 border border-red-200 text-red-800 text-xs font-bold px-2.5 py-1 rounded-lg">
+                            <span class="w-1.5 h-1.5 rounded-full bg-red-600 animate-ping"></span>
+                            <span>${s.name} (${reason})</span>
+                        </div>
+                    `;
+                }).join(' ');
+
+                alarmBanner.innerHTML = `
+                    <div class="flex items-start space-x-4">
+                        <div class="bg-red-100 text-red-600 p-3 rounded-xl shrink-0 mt-1">
+                            <i data-lucide="shield-alert" class="w-8 h-8"></i>
+                        </div>
+                        <div>
+                            <h3 class="text-base font-black text-slate-900 uppercase tracking-wide">⚠️ Alarma No Lista (Sensores Abiertos)</h3>
+                            <p class="text-xs text-slate-500 mt-1 font-medium">Hay ${unsafeSensors.length} sensor(es) asociado(s) abierto(s) o fuera de línea que impiden el armado seguro:</p>
+                            <div class="flex flex-wrap gap-1.5 mt-2.5">
+                                ${unsafeListHtml}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="bg-red-600 text-white font-extrabold px-4 py-2.5 rounded-xl text-center shadow-md shrink-0 w-full lg:w-auto select-none text-xs uppercase tracking-wider">
+                        🚨 Zona Abierta
+                    </div>
+                `;
+            }
+            refreshIcons();
+        }
+
+        // Init Lucide Icons
+        function refreshIcons() {
+            lucide.createIcons();
+        }
+
+        // Show Toast helper
+        function showToast(message, type = 'success') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = `flex items-center space-x-3 p-4 rounded-xl shadow-lg border text-sm pointer-events-auto bg-white transition-all transform translate-y-2 opacity-0 duration-300`;
+            
+            let iconCode = '';
+            if (type === 'success') {
+                toast.classList.add('border-emerald-100', 'text-slate-800');
+                iconCode = `<i data-lucide="check-circle" class="w-5 h-5 text-emerald-500 shrink-0"></i>`;
+            } else if (type === 'error') {
+                toast.classList.add('border-red-100', 'text-slate-800');
+                iconCode = `<i data-lucide="alert-circle" class="w-5 h-5 text-red-500 shrink-0"></i>`;
+            } else {
+                toast.classList.add('border-blue-100', 'text-slate-800');
+                iconCode = `<i data-lucide="info" class="w-5 h-5 text-blue-500 shrink-0"></i>`;
+            }
+            
+            toast.innerHTML = `
+                ${iconCode}
+                <div class="font-medium">${message}</div>
+                <button class="text-slate-400 hover:text-slate-600 pl-2 focus:outline-none">
+                    <i data-lucide="x" class="w-4 h-4"></i>
+                </button>
+            `;
+            
+            container.appendChild(toast);
+            refreshIcons();
+            
+            // Trigger animate-in
+            setTimeout(() => {
+                toast.classList.remove('translate-y-2', 'opacity-0');
+            }, 10);
+            
+            // Toast close click
+            toast.querySelector('button').addEventListener('click', () => {
+                toast.classList.add('opacity-0');
+                setTimeout(() => toast.remove(), 300);
+            });
+            
+            // Auto close
+            setTimeout(() => {
+                if (toast.parentNode) {
+                    toast.classList.add('opacity-0');
+                    setTimeout(() => toast.remove(), 300);
+                }
+            }, 4000);
+        }
+
+        // Fetch Devices API
+        async function fetchDevices() {
+            if (isRefreshing) return;
+            isRefreshing = true;
+            manualRefreshBtn.disabled = true;
+            refreshIcon.classList.add('animate-spin');
+            
+            loadingState.classList.remove('hidden');
+            sensorsGrid.classList.add('hidden');
+            emptyState.classList.add('hidden');
+            errorBanner.classList.add('hidden');
+            
+            try {
+                // Get credentials from localStorage if present for Render compatibility (stateless)
+                const localClientId = localStorage.getItem('tuya_client_id');
+                const localClientSecret = localStorage.getItem('tuya_client_secret');
+                const localBaseUrl = localStorage.getItem('tuya_base_url') || 'https://openapi.tuyaus.com';
+                
+                const headers = {};
+                if (localClientId && localClientSecret) {
+                    headers['X-Tuya-Client-Id'] = localClientId;
+                    headers['X-Tuya-Client-Secret'] = localClientSecret;
+                    headers['X-Tuya-Base-Url'] = localBaseUrl;
+                }
+                
+                const response = await fetch('/api/devices', { headers });
+                const data = await response.json();
+                
+                if (data.success) {
+                    devicesData = data;
+                    renderDashboard();
+                } else {
+                    showError(data.error || 'No se pudieron recuperar los sensores');
+                }
+            } catch (err) {
+                console.error(err);
+                showError('Error de red al conectar con el servidor local');
+            } finally {
+                isRefreshing = false;
+                manualRefreshBtn.disabled = false;
+                refreshIcon.classList.remove('animate-spin');
+                loadingState.classList.add('hidden');
+            }
+        }
+
+        function showError(msg) {
+            errorMessage.textContent = msg;
+            errorBanner.classList.remove('hidden');
+            sensorsGrid.classList.add('hidden');
+            loadingState.classList.add('hidden');
+            emptyState.classList.add('hidden');
+            showToast(msg, 'error');
+        }
+
+        // Render dashboard statistics
+        function updateStats(sensors) {
+            const total = sensors.length;
+            
+            // Low battery is below 20%
+            const lowBattery = sensors.filter(s => s.online && s.battery_percentage !== null && s.battery_percentage < 20).length;
+            
+            // Offline sensors
+            const offline = sensors.filter(s => !s.online).length;
+            
+            // Active / Alert state sensors:
+            // Doorcontact = Abierto, PIR = Movimiento Detectado, Water = Fuga, Smoke = Alarma, Gas = Alarma, SOS = Alarma, Presence = Presencia
+            const active = sensors.filter(s => {
+                if (!s.online) return false;
+                const desc = s.state_description.toLowerCase();
+                return desc.includes('abierto') || 
+                       desc.includes('movimiento') || 
+                       desc.includes('fuga') || 
+                       desc.includes('humo') || 
+                       desc.includes('gas') || 
+                       desc.includes('sos') || 
+                       desc.includes('presencia');
+            }).length;
+
+            statTotalSensors.textContent = total;
+            
+            statActiveSensors.textContent = active;
+            if (active > 0) {
+                statActiveBg.className = 'bg-red-100 text-red-600 p-3 rounded-xl animate-pulse';
+            } else {
+                statActiveBg.className = 'bg-slate-50 text-slate-400 p-3 rounded-xl';
+            }
+
+            statLowBattery.textContent = lowBattery;
+            if (lowBattery > 0) {
+                statBatteryBg.className = 'bg-amber-100 text-amber-600 p-3 rounded-xl animate-bounce';
+            } else {
+                statBatteryBg.className = 'bg-slate-50 text-slate-400 p-3 rounded-xl';
+            }
+
+            statOfflineSensors.textContent = offline;
+        }
+
+        // HTML card generator for sensor
+        function createSensorCard(sensor) {
+            const isOnline = sensor.online;
+            
+            // Battery representation
+            let batteryIcon = 'battery';
+            let batteryColor = 'text-slate-400';
+            if (sensor.battery_percentage !== null) {
+                const pct = sensor.battery_percentage;
+                if (pct <= 20) {
+                    batteryIcon = 'battery-low';
+                    batteryColor = 'text-red-500 font-bold';
+                } else if (pct <= 60) {
+                    batteryIcon = 'battery-medium';
+                    batteryColor = 'text-amber-500';
+                } else {
+                    batteryIcon = 'battery-charging';
+                    batteryColor = 'text-emerald-500';
+                }
+            }
+
+            // Determine status colors based on the parsed state
+            const stateLower = sensor.state_description.toLowerCase();
+            let badgeClass = 'bg-slate-50 text-slate-600 border border-slate-200';
+            let pulseClass = '';
+
+            // Standard doorcontact Open
+            if (stateLower.includes('abierto')) {
+                badgeClass = 'bg-red-50 text-red-700 border border-red-100';
+                pulseClass = '<span class="flex h-2.5 w-2.5 relative"><span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span><span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span></span>';
+            } 
+            // Closed doorcontact
+            else if (stateLower.includes('cerrado')) {
+                badgeClass = 'bg-emerald-50 text-emerald-700 border border-emerald-100';
+            } 
+            // Motion detected
+            else if (stateLower.includes('movimiento detectado') || stateLower.includes('fuga') || stateLower.includes('humo') || stateLower.includes('gas') || stateLower.includes('sos') || stateLower.includes('presencia detectada')) {
+                badgeClass = 'bg-red-100 text-red-800 border border-red-200 font-bold';
+                pulseClass = '<span class="flex h-2.5 w-2.5 relative"><span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75"></span><span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-600"></span></span>';
+            }
+            // PIR / Water normal
+            else if (stateLower.includes('sin movimiento') || stateLower.includes('seco') || stateLower.includes('normal') || stateLower.includes('sin presencia')) {
+                badgeClass = 'bg-slate-50 text-slate-500 border border-slate-100';
+            }
+            // Temperature/humidity
+            else if (stateLower.includes('°c')) {
+                badgeClass = 'bg-blue-50 text-blue-700 border border-blue-100 font-semibold';
+            }
+
+            // Map standard icons
+            let iconMarkup = '<i data-lucide="cpu" class="w-6 h-6"></i>';
+            if (sensor.sensor_icon === 'door-closed') {
+                iconMarkup = stateLower.includes('abierto') 
+                    ? '<i data-lucide="door-open" class="w-6 h-6 text-red-500"></i>' 
+                    : '<i data-lucide="door-closed" class="w-6 h-6 text-emerald-500"></i>';
+            } else if (sensor.sensor_icon === 'motion') {
+                iconMarkup = stateLower.includes('movimiento')
+                    ? '<i data-lucide="unplug" class="w-6 h-6 text-red-500 animate-pulse"></i>'
+                    : '<i data-lucide="activity" class="w-6 h-6 text-slate-400"></i>';
+            } else if (sensor.sensor_icon === 'temp') {
+                iconMarkup = '<i data-lucide="thermometer" class="w-6 h-6 text-blue-500"></i>';
+            } else if (sensor.sensor_icon === 'water') {
+                iconMarkup = '<i data-lucide="droplet" class="w-6 h-6 text-blue-500"></i>';
+            } else if (sensor.sensor_icon === 'smoke') {
+                iconMarkup = '<i data-lucide="flame" class="w-6 h-6 text-red-500"></i>';
+            } else if (sensor.sensor_icon === 'gas') {
+                iconMarkup = '<i data-lucide="wind" class="w-6 h-6 text-amber-500"></i>';
+            } else if (sensor.sensor_icon === 'vibrate') {
+                iconMarkup = stateLower.includes('detectada')
+                    ? '<i data-lucide="activity" class="w-6 h-6 text-purple-500 animate-bounce"></i>'
+                    : '<i data-lucide="rss" class="w-6 h-6 text-slate-400"></i>';
+            } else if (sensor.sensor_icon === 'sos') {
+                iconMarkup = '<i data-lucide="alert-octagon" class="w-6 h-6 text-red-600"></i>';
+            } else if (sensor.sensor_icon === 'presence') {
+                iconMarkup = '<i data-lucide="eye" class="w-6 h-6 text-indigo-500"></i>';
+            } else if (sensor.sensor_icon === 'shield') {
+                iconMarkup = stateLower.includes('desarmado')
+                    ? '<i data-lucide="shield-off" class="w-6 h-6 text-slate-400"></i>'
+                    : '<i data-lucide="shield" class="w-6 h-6 text-emerald-500 font-bold"></i>';
+            } else if (sensor.sensor_icon === 'valve') {
+                iconMarkup = stateLower.includes('abierto')
+                    ? '<i data-lucide="droplets" class="w-6 h-6 text-blue-500 animate-pulse"></i>'
+                    : '<i data-lucide="droplet" class="w-6 h-6 text-slate-400"></i>';
+            }
+
+            // Technical details listing
+            const technicalLines = Object.entries(sensor.status_raw)
+                .map(([k, v]) => `
+                    <div class="flex justify-between border-b border-slate-100 py-1 font-mono text-[10px]">
+                        <span class="text-slate-400">${k}</span>
+                        <span class="text-slate-600 font-bold">${v}</span>
+                    </div>
+                `).join('') || '<div class="text-[10px] text-slate-400 text-center py-2">Sin variables de estado</div>';
+
+            const hasLowBattery = isOnline && sensor.battery_percentage !== null && sensor.battery_percentage < 20;
+            const borderClass = !isOnline 
+                ? 'border-slate-200 opacity-60' 
+                : hasLowBattery 
+                    ? 'border-red-300 ring-2 ring-red-500/10 bg-red-50/10' 
+                    : 'border-slate-200';
+
+            return `
+                <div class="bg-white rounded-2xl border ${borderClass} overflow-hidden shadow-sm hover:shadow-md transition-all duration-300 flex flex-col h-full group">
+                    
+                    <!-- Online / offline indicator line -->
+                    <div class="h-1 w-full ${isOnline ? (stateLower.includes('abierto') || stateLower.includes('movimiento detectado') || stateLower.includes('fuga') || stateLower.includes('humo') ? 'bg-red-500' : 'bg-emerald-500') : 'bg-slate-300'}"></div>
+                    
+                    <!-- Card Body -->
+                    <div class="p-5 flex-grow flex flex-col justify-between">
+                        
+                        <!-- Top Header info -->
+                        <div class="flex justify-between items-start mb-4">
+                            <div class="flex items-center space-x-3">
+                                <div class="bg-slate-50 p-2.5 rounded-xl border border-slate-100 group-hover:scale-110 transition-transform">
+                                    ${iconMarkup}
+                                </div>
+                                <div>
+                                    <h4 class="font-bold text-slate-900 group-hover:text-orange-600 transition-colors text-sm sm:text-base leading-tight">${sensor.name}</h4>
+                                    <p class="text-xs text-slate-400 mt-0.5 font-medium">${sensor.sensor_type}</p>
+                                </div>
+                            </div>
+
+                            <!-- Battery & Connection indicator -->
+                            <div class="flex flex-col items-end space-y-1.5 shrink-0">
+                                <!-- Online indicator -->
+                                <div class="flex items-center space-x-1.5 bg-slate-50 border border-slate-100 px-2 py-0.5 rounded-full">
+                                    <span class="w-1.5 h-1.5 rounded-full ${isOnline ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}"></span>
+                                    <span class="text-[10px] font-bold uppercase tracking-wider text-slate-500">${isOnline ? 'On' : 'Off'}</span>
+                                </div>
+
+                                <!-- Battery Indicator -->
+                                ${sensor.battery_percentage !== null || sensor.battery_text !== 'N/A' ? `
+                                <div class="flex items-center space-x-1 ${batteryColor} text-xs font-semibold">
+                                    <i data-lucide="${batteryIcon}" class="w-3.5 h-3.5"></i>
+                                    <span>${sensor.battery_text}</span>
+                                </div>
+                                ` : ''}
+                            </div>
+                        </div>
+
+                        <!-- Main Status Badge Box -->
+                        <div class="bg-slate-50/50 rounded-xl p-3 border border-slate-100 flex items-center justify-between mt-auto">
+                            <div class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Estado</div>
+                            <div class="flex items-center space-x-1.5 font-bold text-sm ${badgeClass} px-3 py-1 rounded-lg">
+                                ${pulseClass}
+                                <span>${sensor.state_description}</span>
+                            </div>
+                        </div>
+
+                        <!-- Alarm Protection Toggle -->
+                        <div class="mt-3 flex items-center justify-between border-t border-slate-100 pt-2.5">
+                            <span class="text-xs text-slate-400 font-bold uppercase tracking-wider">Monitorear</span>
+                            ${associatedSensorIds && associatedSensorIds.includes(sensor.id) ? `
+                            <button onclick="event.preventDefault(); event.stopPropagation(); toggleAlarmAssociation('${sensor.id}')" 
+                                class="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-orange-500 hover:bg-orange-600 text-white border border-orange-500 text-xs font-black shadow-sm transition-all focus:outline-none shrink-0 active:scale-95">
+                                <i data-lucide="shield" class="w-3.5 h-3.5 shrink-0"></i>
+                                <span>Alarma SÍ</span>
+                            </button>
+                            ` : `
+                            <button onclick="event.preventDefault(); event.stopPropagation(); toggleAlarmAssociation('${sensor.id}')" 
+                                class="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-white hover:bg-slate-50 text-slate-400 border border-slate-200 text-xs font-bold transition-all focus:outline-none shrink-0 active:scale-95">
+                                <i data-lucide="shield-alert" class="w-3.5 h-3.5 shrink-0 text-slate-300"></i>
+                                <span>Alarma NO</span>
+                            </button>
+                            `}
+                        </div>
+
+                        <!-- Technical Details Accordion -->
+                        <div class="mt-4 border-t border-slate-100 pt-3">
+                            <details class="group/details">
+                                <summary class="flex items-center justify-between text-[11px] font-bold text-slate-400 hover:text-slate-600 cursor-pointer list-none select-none">
+                                    <span>Detalles Técnicos</span>
+                                    <i data-lucide="chevron-down" class="w-3.5 h-3.5 transform group-open/details:rotate-180 transition-transform"></i>
+                                </summary>
+                                <div class="mt-2.5 max-h-36 overflow-y-auto custom-scrollbar pr-1">
+                                    <div class="bg-slate-50 p-2 rounded-lg border border-slate-100">
+                                        <div class="flex justify-between border-b border-slate-100 pb-1 font-mono text-[10px]">
+                                            <span class="text-slate-400">ID de Disp.</span>
+                                            <span class="text-slate-600 font-bold truncate max-w-[120px]" title="${sensor.id}">${sensor.id}</span>
+                                        </div>
+                                        <div class="flex justify-between border-b border-slate-100 py-1 font-mono text-[10px]">
+                                            <span class="text-slate-400">Categoría</span>
+                                            <span class="text-slate-600 font-bold">${sensor.category}</span>
+                                        </div>
+                                        ${technicalLines}
+                                    </div>
+                                </div>
+                            </details>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // HTML card generator for non-sensor devices
+        function createGenericDeviceCard(dev) {
+            const isOnline = dev.online;
+            return `
+                <div class="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm hover:shadow-md transition-all p-4 flex items-center justify-between">
+                    <div class="flex items-center space-x-3">
+                        <div class="bg-slate-100 p-2 rounded-lg">
+                            <i data-lucide="cpu" class="w-5 h-5 text-slate-500"></i>
+                        </div>
+                        <div>
+                            <h5 class="font-bold text-slate-800 text-sm leading-tight">${dev.name}</h5>
+                            <p class="text-[11px] text-slate-400 font-medium mt-0.5">Categoría: ${dev.category}</p>
+                        </div>
+                    </div>
+                    <div class="flex items-center space-x-2 shrink-0">
+                        <span class="w-2 h-2 rounded-full ${isOnline ? 'bg-emerald-500' : 'bg-slate-300'}"></span>
+                        <span class="text-xs font-semibold text-slate-600">${isOnline ? 'En línea' : 'Fuera de línea'}</span>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Render dashboard elements
+        function renderDashboard() {
+            const sensors = devicesData.sensors || [];
+            const others = devicesData.others || [];
+
+            // First time load: auto-associate all doorcontact (mcs) and vibration (zd) sensors
+            if (associatedSensorIds === null) {
+                associatedSensorIds = sensors
+                    .filter(s => s.category === 'mcs' || s.category === 'zd')
+                    .map(s => s.id);
+                localStorage.setItem('associated_sensor_ids', JSON.stringify(associatedSensorIds));
+            }
+
+            // Update alarm status banner
+            updateAlarmStatus(sensors);
+
+            // Update stat metrics at the top
+            updateStats(sensors);
+
+            // Filter sensors
+            let filteredSensors = [...sensors];
+
+            // 1. Category tab filter
+            if (activeFilter === 'alarm-only') {
+                filteredSensors = filteredSensors.filter(s => associatedSensorIds && associatedSensorIds.includes(s.id));
+            } else if (activeFilter === 'active') {
+                filteredSensors = filteredSensors.filter(s => {
+                    if (!s.online) return false;
+                    const desc = s.state_description.toLowerCase();
+                    return desc.includes('abierto') || 
+                           desc.includes('movimiento') || 
+                           desc.includes('fuga') || 
+                           desc.includes('humo') || 
+                           desc.includes('gas') || 
+                           desc.includes('sos') || 
+                           desc.includes('presencia');
+                });
+            } else if (activeFilter === 'low-battery') {
+                filteredSensors = filteredSensors.filter(s => s.online && s.battery_percentage !== null && s.battery_percentage < 20);
+            } else if (activeFilter === 'offline') {
+                filteredSensors = filteredSensors.filter(s => !s.online);
+            }
+
+            // 2. Search query filter
+            if (searchQuery.trim() !== '') {
+                const q = searchQuery.toLowerCase().trim();
+                filteredSensors = filteredSensors.filter(s => 
+                    s.name.toLowerCase().includes(q) || 
+                    s.product_name.toLowerCase().includes(q) || 
+                    s.sensor_type.toLowerCase().includes(q)
+                );
+            }
+
+            // Clear grid
+            sensorsGrid.innerHTML = '';
+
+            // Handle empty grid
+            if (filteredSensors.length === 0) {
+                sensorsGrid.classList.add('hidden');
+                emptyState.classList.remove('hidden');
+                
+                if (sensors.length === 0) {
+                    emptyStateTitle.textContent = "No se encontraron sensores";
+                    emptyStateDesc.textContent = "No se detectaron dispositivos de tipo sensor vinculados en esta cuenta de Tuya. Por favor verifica tus dispositivos.";
+                } else {
+                    emptyStateTitle.textContent = "Búsqueda sin resultados";
+                    emptyStateDesc.textContent = "Ningún sensor coincide con el filtro o término de búsqueda seleccionado.";
+                }
+            } else {
+                emptyState.classList.add('hidden');
+                sensorsGrid.classList.remove('hidden');
+                
+                // Render each card
+                filteredSensors.forEach(sensor => {
+                    sensorsGrid.insertAdjacentHTML('beforeend', createSensorCard(sensor));
+                });
+            }
+
+            // Render other devices list
+            if (others.length > 0) {
+                othersSection.classList.remove('hidden');
+                othersCountText.textContent = `Detectados ${others.length} dispositivos adicionales`;
+                
+                // Clear and render other devices grid
+                othersGrid.innerHTML = '';
+                others.forEach(dev => {
+                    othersGrid.insertAdjacentHTML('beforeend', createGenericDeviceCard(dev));
+                });
+            } else {
+                othersSection.classList.add('hidden');
+            }
+
+            refreshIcons();
+        }
+
+        // Toggle others section accordion
+        toggleOthersBtn.addEventListener('click', () => {
+            othersGrid.classList.toggle('hidden');
+            othersChevron.classList.toggle('rotate-180');
+        });
+
+        // Filter tab selection handler
+        document.querySelectorAll('.filter-tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                // Remove active classes
+                document.querySelectorAll('.filter-tab').forEach(t => {
+                    t.className = 'filter-tab px-4 py-2 text-sm font-medium rounded-lg text-slate-600 hover:bg-slate-50 hover:text-slate-800 transition-all border border-transparent';
+                });
+                
+                // Set active tab class
+                tab.className = 'filter-tab px-4 py-2 text-sm font-medium rounded-lg bg-orange-500 text-white transition-all shadow-sm';
+                
+                activeFilter = tab.getAttribute('data-filter');
+                renderDashboard();
+            });
+        });
+
+        // Search Input handler (with debounce)
+        let searchTimeout = null;
+        sensorSearch.addEventListener('input', (e) => {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(() => {
+                searchQuery = e.target.value;
+                renderDashboard();
+            }, 150);
+        });
+
+        // Manual Refresh Button handler
+        manualRefreshBtn.addEventListener('click', fetchDevices);
+        emptyRefreshBtn.addEventListener('click', fetchDevices);
+        errorReconnectBtn.addEventListener('click', fetchDevices);
+
+        // Auto Refresh Interval Setup
+        function setupAutoRefresh() {
+            clearInterval(refreshIntervalId);
+            const seconds = parseInt(autoRefreshSelect.value);
+            if (seconds > 0) {
+                refreshIntervalId = setInterval(() => {
+                    fetchDevices();
+                }, seconds * 1000);
+                console.log(`Autorefresco programado cada ${seconds} segundos`);
+            }
+        }
+        autoRefreshSelect.addEventListener('change', setupAutoRefresh);
+
+        // Configuration Form handler (validation and submission)
+        configForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const submitBtn = document.getElementById('save-config-btn');
+            const originalBtnHtml = submitBtn.innerHTML;
+            
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = `
+                <div class="relative w-5 h-5 shrink-0 mr-2">
+                    <div class="absolute border-2 border-white/30 rounded-full w-5 h-5"></div>
+                    <div class="absolute border-2 border-t-white border-r-transparent border-b-transparent border-l-transparent rounded-full w-5 h-5 animate-spin"></div>
+                </div>
+                <span>Conectando con Tuya Cloud...</span>
+            `;
+
+            const client_id = document.getElementById('client_id').value;
+            const client_secret = document.getElementById('client_secret').value;
+            const base_url = document.querySelector('input[name="base_url"]:checked').value;
+
+            try {
+                const response = await fetch('/api/config', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ client_id, client_secret, base_url })
+                });
+                const data = await response.json();
+
+                if (data.success) {
+                    // Save to localStorage for stateless cloud persistence (Render compatibility)
+                    localStorage.setItem('tuya_client_id', client_id);
+                    localStorage.setItem('tuya_client_secret', client_secret);
+                    localStorage.setItem('tuya_base_url', base_url);
+
+                    showToast('¡Credenciales validadas y conectadas exitosamente!', 'success');
+                    
+                    // Show dashboard elements
+                    setupCard.classList.add('hidden');
+                    dashboardView.classList.remove('hidden');
+                    manualRefreshBtn.classList.remove('hidden');
+                    refreshControls.classList.remove('hidden');
+                    
+                    // Update state variables as configured
+                    setupAutoRefresh();
+                    fetchDevices();
+                } else {
+                    showToast(data.error || 'Error al validar credenciales', 'error');
+                }
+            } catch (err) {
+                console.error(err);
+                showToast('Error de red al enviar credenciales', 'error');
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = originalBtnHtml;
+                refreshIcons();
+            }
+        });
+
+        // Settings / Credenciales Button click (toggles settings card / dashboard)
+        settingsBtn.addEventListener('click', () => {
+            if (setupCard.classList.contains('hidden')) {
+                // Open settings
+                setupCard.classList.remove('hidden');
+                dashboardView.classList.add('hidden');
+                manualRefreshBtn.classList.add('hidden');
+                refreshControls.classList.add('hidden');
+                settingsBtn.className = 'bg-orange-500 hover:bg-orange-600 text-white p-2 rounded-lg transition-colors flex items-center justify-center font-medium text-sm space-x-1.5 focus:outline-none';
+                settingsBtn.querySelector('span').textContent = "Cerrar Ajustes";
+            } else {
+                // Close settings (only if already configured)
+                const isConfigured = {% if is_configured %}true{% else %}false{% endif %} || devicesData.sensors.length > 0;
+                if (isConfigured) {
+                    setupCard.classList.add('hidden');
+                    dashboardView.classList.remove('hidden');
+                    manualRefreshBtn.classList.remove('hidden');
+                    refreshControls.classList.remove('hidden');
+                    settingsBtn.className = 'bg-slate-800 hover:bg-slate-700 text-white p-2 rounded-lg transition-colors flex items-center justify-center font-medium text-sm space-x-1.5 focus:outline-none';
+                    settingsBtn.querySelector('span').textContent = "Credenciales";
+                    fetchDevices();
+                } else {
+                    showToast('Debes configurar credenciales válidas antes de continuar', 'error');
+                }
+            }
+        });
+
+        errorSettingsBtn.addEventListener('click', () => {
+            setupCard.classList.remove('hidden');
+            dashboardView.classList.add('hidden');
+            manualRefreshBtn.classList.add('hidden');
+            refreshControls.classList.add('hidden');
+            settingsBtn.className = 'bg-orange-500 hover:bg-orange-600 text-white p-2 rounded-lg transition-colors flex items-center justify-center font-medium text-sm space-x-1.5';
+            settingsBtn.querySelector('span').textContent = "Cerrar Ajustes";
+        });
+
+        // Initial setup on page load
+        window.addEventListener('DOMContentLoaded', () => {
+            const hasLocalCreds = localStorage.getItem('tuya_client_id') && localStorage.getItem('tuya_client_secret');
+            const isServerConfigured = {% if is_configured %}true{% else %}false{% endif %};
+            
+            // Pre-fill form fields if we have local credentials
+            if (hasLocalCreds) {
+                document.getElementById('client_id').value = localStorage.getItem('tuya_client_id');
+                document.getElementById('client_secret').value = localStorage.getItem('tuya_client_secret');
+                const base_url = localStorage.getItem('tuya_base_url') || 'https://openapi.tuyaus.com';
+                const radio = document.querySelector(`input[name="base_url"][value="${base_url}"]`);
+                if (radio) radio.checked = true;
+            }
+            
+            if (isServerConfigured || hasLocalCreds) {
+                // Show controls
+                manualRefreshBtn.classList.remove('hidden');
+                refreshControls.classList.remove('hidden');
+                setupCard.classList.add('hidden');
+                dashboardView.classList.remove('hidden');
+                
+                // Fetch devices
+                fetchDevices();
+                // Setup auto refresh
+                setupAutoRefresh();
+            } else {
+                // Initial load needs setup card showing
+                setupCard.classList.remove('hidden');
+                dashboardView.classList.add('hidden');
+            }
+            refreshIcons();
+        });
+    </script>
+</body>
+</html>
