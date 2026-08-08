@@ -297,10 +297,11 @@ class TuyaAPI:
     def get_automations(self, access_token, home_id):
         """
         Fetches scenes/automations for a home.
-        Endpoint: GET /v1.0/homes/{home_id}/scenes
+        Primary Endpoint: GET /v1.0/homes/{home_id}/automations
+        Fallback Endpoint: GET /v1.0/homes/{home_id}/scenes
         """
         t = self._get_timestamp()
-        url_path = f"/v1.0/homes/{home_id}/scenes"
+        url_path = f"/v1.0/homes/{home_id}/automations"
         sign = self._calculate_sign(t, "GET", url_path, access_token=access_token)
         headers = {
             "client_id": self.client_id,
@@ -313,9 +314,18 @@ class TuyaAPI:
         url = f"{self.base_url}{url_path}"
         try:
             data = self._http_request("GET", url, headers=headers, timeout=15)
-            return data
+            if data.get("success"):
+                return data
+            # Fallback if automations query fails
+            t = self._get_timestamp()
+            url_path_fb = f"/v1.0/homes/{home_id}/scenes"
+            sign_fb = self._calculate_sign(t, "GET", url_path_fb, access_token=access_token)
+            headers["t"] = t
+            headers["sign"] = sign_fb
+            data_fb = self._http_request("GET", f"{self.base_url}{url_path_fb}", headers=headers, timeout=15)
+            return data_fb
         except Exception as e:
-            logger.warning(f"Error fetching home scenes: {e}")
+            logger.warning(f"Error fetching home automations: {e}")
             return {"success": False, "error": str(e)}
 
     def create_automation(self, access_token, home_id, automation_payload):
@@ -356,3 +366,28 @@ class TuyaAPI:
         except Exception as e:
             logger.error(f"Error creating automation in Tuya Cloud: {e}")
             raise Exception(f"Network error creating automation: {e}")
+
+    def delete_automation(self, access_token, home_id, automation_id):
+        """
+        Deletes an automation rule from a home in Tuya Cloud.
+        Endpoint: DELETE /v1.0/homes/{home_id}/automations/{automation_id}
+        """
+        t = self._get_timestamp()
+        url_path = f"/v1.0/homes/{home_id}/automations/{automation_id}"
+        sign = self._calculate_sign(t, "DELETE", url_path, access_token=access_token)
+        headers = {
+            "client_id": self.client_id,
+            "sign": sign,
+            "t": t,
+            "sign_method": "HMAC-SHA256",
+            "access_token": access_token,
+            "Content-Type": "application/json"
+        }
+        url = f"{self.base_url}{url_path}"
+        try:
+            logger.info(f"Deleting automation {automation_id} in home {home_id}")
+            data = self._http_request("DELETE", url, headers=headers, timeout=15)
+            return data
+        except Exception as e:
+            logger.warning(f"Error deleting automation {automation_id}: {e}")
+            return {"success": False, "error": str(e)}

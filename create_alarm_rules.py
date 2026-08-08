@@ -88,6 +88,16 @@ def generate_and_create_rules(client_id, client_secret, base_url="https://openap
 
     logger.info(f"Alarm Mode Code: '{alarm_mode_code}', Panic Value: '{panic_value}'")
 
+    # Fetch existing automations to avoid duplicate rules
+    existing_autos_res = api.get_automations(access_token, home_id)
+    existing_autos = existing_autos_res.get("result", []) if isinstance(existing_autos_res, dict) else []
+    existing_by_name = {}
+    for ea in existing_autos:
+        ename = ea.get("name")
+        eid = ea.get("automation_id") or ea.get("id") or ea.get("scene_id")
+        if ename and eid:
+            existing_by_name.setdefault(ename, []).append(eid)
+
     created_rules = []
     failed_rules = []
 
@@ -144,6 +154,20 @@ def generate_and_create_rules(client_id, client_secret, base_url="https://openap
         for m in modes:
             rule_name = f"{dev_name} {m['suffix']}"
             
+            # If rule already exists, clean up any extra duplicates and skip recreating
+            if rule_name in existing_by_name and existing_by_name[rule_name]:
+                eids = existing_by_name[rule_name]
+                # If there are duplicates, delete all except the first one
+                if len(eids) > 1:
+                    for dup_id in eids[1:]:
+                        logger.info(f"Deleting duplicate rule '{rule_name}' (ID: {dup_id})...")
+                        api.delete_automation(access_token, home_id, dup_id)
+                
+                kept_id = eids[0]
+                logger.info(f"Rule '{rule_name}' already exists (ID: {kept_id}). Keeping existing rule.")
+                created_rules.append({"name": rule_name, "id": kept_id, "sensor": dev_name, "status": "existing"})
+                continue
+
             automation_payload = {
                 "name": rule_name,
                 "background": "https://images.tuyaus.com/smart/rule/cover/1.png",
