@@ -399,6 +399,16 @@
             renderDashboard();
         }
 
+        function findAlarmHost(sensors, others) {
+            const list = [...(sensors || []), ...(others || [])];
+            return list.find(s => {
+                if (!s) return false;
+                if (s.category === 'mal' || s.sensor_icon === 'shield') return true;
+                const nameLower = (s.name || '').toLowerCase();
+                return nameLower.includes('alarma') || nameLower.includes('alarm');
+            }) || null;
+        }
+
         // Update Alarm status banner
         function updateAlarmStatus(sensors) {
             const alarmBanner = document.getElementById('alarm-banner');
@@ -436,12 +446,11 @@
             let activeMode = null; // 'arm', 'home', or null/disarmed
             let isRealAlarm = false;
 
-            const alarmHost = (devicesData.sensors || []).find(s => s.category === 'mal' || s.sensor_icon === 'shield') ||
-                              (devicesData.others || []).find(s => s.category === 'mal');
+            const alarmHost = findAlarmHost(devicesData.sensors, devicesData.others);
 
             if (alarmHost) {
-                const masterMode = alarmHost.status_raw && alarmHost.status_raw.master_mode;
-                if (masterMode && masterMode !== 'disarmed') {
+                const masterMode = alarmHost.status_raw && (alarmHost.status_raw.master_mode || alarmHost.status_raw.mode || alarmHost.status_raw.arm_state);
+                if (masterMode && masterMode !== 'disarmed' && masterMode !== 'disarm') {
                     activeMode = masterMode;
                     isRealAlarm = true;
                 }
@@ -559,9 +568,8 @@
             const sensors = devicesData.sensors || [];
             const others = devicesData.others || [];
             
-            // Find physical alarm host
-            const alarmHost = sensors.find(s => s.category === 'mal' || s.sensor_icon === 'shield') || 
-                              others.find(s => s.category === 'mal');
+            // Find physical alarm host ("Alarma 4G", "Central de Alarma", etc.)
+            const alarmHost = findAlarmHost(sensors, others);
 
             if (!alarmHost) {
                 // Simulation mode

@@ -221,3 +221,84 @@ class TuyaAPI:
             return data
         except requests.exceptions.RequestException as e:
             raise Exception(f"Network error sending commands: {e}")
+
+    def get_user_homes(self, access_token, uid):
+        """
+        Fetches home/family IDs associated with user account.
+        Endpoint: GET /v1.0/users/{uid}/homes
+        """
+        t = self._get_timestamp()
+        url_path = f"/v1.0/users/{uid}/homes"
+        sign = self._calculate_sign(t, "GET", url_path, access_token=access_token)
+        headers = {
+            "client_id": self.client_id,
+            "sign": sign,
+            "t": t,
+            "sign_method": "HMAC-SHA256",
+            "access_token": access_token,
+            "Content-Type": "application/json"
+        }
+        url = f"{self.base_url}{url_path}"
+        try:
+            response = requests.get(url, headers=headers, timeout=15)
+            response.raise_for_status()
+            data = response.json()
+            if data.get("success"):
+                return data.get("result", [])
+            return []
+        except Exception as e:
+            logger.warning(f"Error fetching user homes: {e}")
+            return []
+
+    def get_automations(self, access_token, home_id):
+        """
+        Fetches scenes/automations for a home.
+        Endpoint: GET /v1.0/homes/{home_id}/scenes
+        """
+        t = self._get_timestamp()
+        url_path = f"/v1.0/homes/{home_id}/scenes"
+        sign = self._calculate_sign(t, "GET", url_path, access_token=access_token)
+        headers = {
+            "client_id": self.client_id,
+            "sign": sign,
+            "t": t,
+            "sign_method": "HMAC-SHA256",
+            "access_token": access_token,
+            "Content-Type": "application/json"
+        }
+        url = f"{self.base_url}{url_path}"
+        try:
+            response = requests.get(url, headers=headers, timeout=15)
+            response.raise_for_status()
+            data = response.json()
+            return data
+        except Exception as e:
+            logger.warning(f"Error fetching home scenes: {e}")
+            return {"success": False, "error": str(e)}
+
+    def create_automation(self, access_token, home_id, automation_payload):
+        """
+        Creates a scene/automation rule for a home in Tuya Cloud.
+        Endpoint: POST /v1.0/homes/{home_id}/scenes
+        """
+        t = self._get_timestamp()
+        url_path = f"/v1.0/homes/{home_id}/scenes"
+        body = json.dumps(automation_payload, separators=(',', ':'))
+        sign = self._calculate_sign(t, "POST", url_path, body=body, access_token=access_token)
+        headers = {
+            "client_id": self.client_id,
+            "sign": sign,
+            "t": t,
+            "sign_method": "HMAC-SHA256",
+            "access_token": access_token,
+            "Content-Type": "application/json"
+        }
+        url = f"{self.base_url}{url_path}"
+        try:
+            response = requests.post(url, headers=headers, data=body, timeout=15)
+            response.raise_for_status()
+            data = response.json()
+            return data
+        except Exception as e:
+            logger.error(f"Error creating automation in Tuya Cloud: {e}")
+            raise Exception(f"Network error creating automation: {e}")

@@ -64,6 +64,22 @@ def save_config(config_data):
         logger.error(f"Error saving config file: {e}")
         return False
 
+def get_alarm_host(sensors, others=None):
+    """
+    Finds the central alarm host device ("Alarma 4G", "Central de Alarma", etc.)
+    from lists of sensors and other devices.
+    """
+    all_devices = list(sensors or []) + list(others or [])
+    for dev in all_devices:
+        if not isinstance(dev, dict):
+            continue
+        cat = dev.get("category", "")
+        icon = dev.get("sensor_icon", "")
+        dev_name = (dev.get("name") or "").lower()
+        if cat == "mal" or icon == "shield" or "alarma" in dev_name or "alarm" in dev_name:
+            return dev
+    return None
+
 def parse_sensor_device(device):
     """
     Parses a raw Tuya device and returns a normalized dictionary
@@ -94,14 +110,20 @@ def parse_sensor_device(device):
         "sfkzq": {"type": "Controlador de Riego", "icon": "valve", "is_sensor": True},
     }
     
-    if category in category_mapping:
+    name_lower = name.lower() + " " + product_name.lower()
+    
+    # Priority check for Alarm Host (e.g., "Alarma 4G", "Alarma", "Alarm Panel")
+    if any(kw in name_lower for kw in ["alarma 4g", "alarma", "alarm host", "central de alarma", "panel de alarma"]):
+        is_sensor = True
+        sensor_type = "Central de Alarma"
+        sensor_icon = "shield"
+    elif category in category_mapping:
         is_sensor = True
         sensor_type = category_mapping[category]["type"]
         sensor_icon = category_mapping[category]["icon"]
     else:
         # Fallback keyword matching in device or product name
-        name_lower = name.lower() + " " + product_name.lower()
-        if any(kw in name_lower for kw in ["sensor", "detect", "contacto", "alarm"]):
+        if any(kw in name_lower for kw in ["sensor", "detect", "contacto", "alarm", "panel"]):
             is_sensor = True
             if any(kw in name_lower for kw in ["puerta", "ventana", "contact", "door", "window", "mcs"]):
                 sensor_type = "Contacto (Puerta/Ventana)"
@@ -128,8 +150,8 @@ def parse_sensor_device(device):
                 sensor_type = "Botón de Emergencia (SOS)"
                 sensor_icon = "sos"
             else:
-                sensor_type = "Sensor General"
-                sensor_icon = "cpu"
+                sensor_type = "Central de Alarma"
+                sensor_icon = "shield"
 
     # Datapoints status extraction
     status_list = device.get("status", [])
@@ -252,17 +274,17 @@ def parse_sensor_device(device):
         else:
             state_desc = "Sin Vibración"
             
-    elif category == "mal" or sensor_icon == "shield":
-        # Alarm Host
-        state_val = status_dict.get("master_mode")
-        if state_val == "disarmed":
+    elif category == "mal" or sensor_icon == "shield" or "alarma" in name_lower or "alarm" in name_lower:
+        # Alarm Host ("Alarma 4G", "Central de Alarma", etc.)
+        state_val = status_dict.get("master_mode") or status_dict.get("mode") or status_dict.get("alarm_state") or status_dict.get("arm_state")
+        if state_val == "disarmed" or state_val is False or state_val == "disarm":
             state_desc = "Desarmado"
-        elif state_val in ["arm", "armed", "arm_mode"]:
-            state_desc = "Armado"
-        elif state_val == "home":
-            state_desc = "Armado Parcial"
+        elif state_val in ["arm", "armed", "arm_mode", "away"]:
+            state_desc = "Armado (Ausente)"
+        elif state_val in ["home", "stay", "home_arm"]:
+            state_desc = "Armado (En Casa)"
         else:
-            state_desc = str(state_val).capitalize() if state_val else "Normal"
+            state_desc = str(state_val).capitalize() if state_val is not None else "Desarmado"
             
     elif category == "sfkzq" or sensor_icon == "valve":
         # Irrigation Valve
@@ -552,12 +574,12 @@ def alexa_skill():
                 if not s["online"]:
                     unsafe_sensors.append(f"{s['name']} (fuera de línea)")
                 else:
-                    desc = s["state_description"].toLowerCase() if hasattr(s["state_description"], "toLowerCase") else str(s["state_description"]).lower()
+                    desc = str(s.get("state_description", "")).lower()
                     if "abierto" in desc or "vibración" in desc:
                         unsafe_sensors.append(s["name"])
 
-        # Check if there is an active alarm device in the system
-        alarm_host = sensors.find(lambda x: x["category"] == "mal" or x["sensor_icon"] == "shield") if hasattr(sensors, "find") else next((x for x in sensors if x["category"] == "mal"), None)
+        # Check if there is an active alarm device in the system ("Alarma 4G", "Central de Alarma", etc.)
+        alarm_host = get_alarm_host(sensors, others)
         alarm_state = "desarmado"
         if alarm_host and alarm_host.get("status_raw") and alarm_host["status_raw"].get("master_mode"):
             mode = alarm_host["status_raw"]["master_mode"]
@@ -681,8 +703,8 @@ def alexa_skill():
             if len(unsafe_sensors) > 0 and target_mode == "arm":
                 speech_text = f"No puedo armar la alarma en modo Ausente porque hay sensores abiertos: {', '.join(unsafe_sensors)}. Por favor ciérralos e inténtalo de nuevo."
             else:
-                # Find alarm device
-                alarm_host = next((x for x in (sensors + others) if x["category"] == "mal"), None)
+                # Find alarm device ("Alarma 4G", "Central de Alarma", etc.)
+                alarm_host = get_alarm_host(sensors, others)
                 if alarm_host:
                     try:
                         commands = [{"code": "master_mode", "value": target_mode}]
@@ -700,8 +722,8 @@ def alexa_skill():
 
         # Intent: DisarmAlarmIntent ("Desarma la alarma" or "Desactiva el panel")
         elif intent_name == "DisarmAlarmIntent":
-            # Find alarm device
-            alarm_host = next((x for x in (sensors + others) if x["category"] == "mal"), None)
+            # Find alarm device ("Alarma 4G", "Central de Alarma", etc.)
+            alarm_host = get_alarm_host(sensors, others)
             if alarm_host:
                 try:
                     commands = [{"code": "master_mode", "value": "disarmed"}]
@@ -733,8 +755,8 @@ def alexa_skill():
         if action in ["arm", "home", "disarmed"]:
             mode_label = "Armado Ausente" if action == "arm" else ("Armado en Casa" if action == "home" else "Desarmado")
             
-            # Find alarm device
-            alarm_host = next((x for x in (sensors + others) if x["category"] == "mal"), None)
+            # Find alarm device ("Alarma 4G", "Central de Alarma", etc.)
+            alarm_host = get_alarm_host(sensors, others)
             
             success = True
             error_details = ""
@@ -767,6 +789,49 @@ def alexa_skill():
             }
 
     return jsonify(alexa_response)
+
+@app.route("/api/automations", methods=["GET", "POST"])
+def manage_automations():
+    # Credentials resolution
+    client_id = request.headers.get("X-Tuya-Client-Id")
+    client_secret = request.headers.get("X-Tuya-Client-Secret")
+    base_url = request.headers.get("X-Tuya-Base-Url", "https://openapi.tuyaus.com")
+    
+    if not client_id or not client_secret:
+        config = load_config()
+        client_id = config.get("client_id")
+        client_secret = config.get("client_secret")
+        base_url = config.get("base_url", "https://openapi.tuyaus.com")
+        
+    if not client_id or not client_secret:
+        return jsonify({"success": False, "error": "Tuya no está configurado todavía"}), 401
+        
+    try:
+        api = TuyaAPI(client_id, client_secret, base_url)
+        access_token, uid = api.get_access_token()
+        
+        # Get homes first
+        homes = api.get_user_homes(access_token, uid)
+        home_id = homes[0].get("home_id") if homes else None
+        
+        if request.method == "GET":
+            if not home_id:
+                return jsonify({"success": True, "automations": [], "msg": "No se encontraron casas/hogares asociados"})
+            automations = api.get_automations(access_token, home_id)
+            return jsonify({"success": True, "home_id": home_id, "result": automations})
+            
+        elif request.method == "POST":
+            data = request.json or {}
+            target_home_id = data.get("home_id") or home_id
+            if not target_home_id:
+                return jsonify({"success": False, "error": "home_id no encontrado. Se requiere especificar el ID del hogar"}), 400
+            
+            result = api.create_automation(access_token, target_home_id, data)
+            return jsonify({"success": True, "result": result})
+            
+    except Exception as e:
+        logger.error(f"Error en /api/automations: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
