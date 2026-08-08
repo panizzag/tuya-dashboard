@@ -73,6 +73,11 @@
                     <i data-lucide="settings" class="w-4 h-4"></i>
                     <span class="hidden md:inline">Credenciales</span>
                 </button>
+
+                <button id="auto-rules-btn" onclick="handleCreateAutomations()" class="bg-amber-600 hover:bg-amber-700 text-white p-2 rounded-lg transition-colors flex items-center justify-center font-medium text-sm space-x-1.5 focus:outline-none focus:ring-2 focus:ring-amber-500 shadow-sm" title="Generar automatizaciones de alarma en Tuya Cloud">
+                    <i data-lucide="zap" class="w-4 h-4"></i>
+                    <span class="hidden md:inline">Crear Reglas Alarma</span>
+                </button>
             </div>
         </div>
     </header>
@@ -618,6 +623,62 @@
             } catch (err) {
                 console.error(err);
                 showToast('Error de red al enviar comando a la alarma', 'error');
+            }
+        }
+
+        // Generate Automations for Alarma 4G and Sensors
+        async function handleCreateAutomations() {
+            if (!confirm("¿Deseas generar automáticamente las reglas de automatización en Tuya Cloud para todos los sensores de vibración y contacto vinculados a Alarma 4G?")) {
+                return;
+            }
+
+            showToast("Generando reglas de automatización en Tuya Cloud...", "info");
+
+            const localClientId = localStorage.getItem('tuya_client_id');
+            const localClientSecret = localStorage.getItem('tuya_client_secret');
+            const localBaseUrl = localStorage.getItem('tuya_base_url') || 'https://openapi.tuyaus.com';
+
+            const headers = { 'Content-Type': 'application/json' };
+            if (localClientId && localClientSecret) {
+                headers['X-Tuya-Client-Id'] = localClientId;
+                headers['X-Tuya-Client-Secret'] = localClientSecret;
+                headers['X-Tuya-Base-Url'] = localBaseUrl;
+            }
+
+            try {
+                const response = await fetch('/api/automations/create-alarm-rules', {
+                    method: 'POST',
+                    headers: headers
+                });
+                const data = await response.json();
+
+                if (data.success) {
+                    const created = data.created_rules || [];
+                    const failed = data.failed_rules || [];
+
+                    let msg = `⚡ ¡Proceso Completado!\\nSe crearon ${data.created_count} automatizaciones.`;
+                    if (created.length > 0) {
+                        msg += "\\n\\nReglas creadas:";
+                        created.slice(0, 10).forEach(r => {
+                            msg += `\\n• ${r.name}`;
+                        });
+                        if (created.length > 10) {
+                            msg += `\\n...y ${created.length - 10} más.`;
+                        }
+                    }
+
+                    if (failed.length > 0) {
+                        msg += `\\n\\nAdvertencia: ${failed.length} reglas no pudieron crearse.`;
+                    }
+
+                    alert(msg);
+                    showToast(`¡${data.created_count} automatizaciones de alarma creadas exitosamente!`, 'success');
+                } else {
+                    showToast(`Error al crear automatizaciones: ${data.error || 'Desconocido'}`, 'error');
+                }
+            } catch (err) {
+                console.error("Error en create-alarm-rules:", err);
+                showToast("Error de red al conectar con el servidor.", "error");
             }
         }
 

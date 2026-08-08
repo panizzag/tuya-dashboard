@@ -279,10 +279,11 @@ class TuyaAPI:
     def create_automation(self, access_token, home_id, automation_payload):
         """
         Creates a scene/automation rule for a home in Tuya Cloud.
-        Endpoint: POST /v1.0/homes/{home_id}/scenes
+        Primary Endpoint: POST /v1.0/homes/{home_id}/automations
+        Fallback Endpoint: POST /v1.0/homes/{home_id}/scenes
         """
         t = self._get_timestamp()
-        url_path = f"/v1.0/homes/{home_id}/scenes"
+        url_path = f"/v1.0/homes/{home_id}/automations"
         body = json.dumps(automation_payload, separators=(',', ':'))
         sign = self._calculate_sign(t, "POST", url_path, body=body, access_token=access_token)
         headers = {
@@ -295,9 +296,24 @@ class TuyaAPI:
         }
         url = f"{self.base_url}{url_path}"
         try:
+            logger.info(f"Creating automation in home {home_id} via {url_path}")
             response = requests.post(url, headers=headers, data=body, timeout=15)
             response.raise_for_status()
             data = response.json()
+            
+            # Fallback if URI or endpoint issue
+            if not data.get("success") and any(err in str(data.get("msg", "")).lower() for err in ["uri", "path", "not exist", "permission"]):
+                logger.warning("Primary automation endpoint failed. Trying scenes endpoint fallback...")
+                t = self._get_timestamp()
+                url_path_fallback = f"/v1.0/homes/{home_id}/scenes"
+                sign_fallback = self._calculate_sign(t, "POST", url_path_fallback, body=body, access_token=access_token)
+                headers["sign"] = sign_fallback
+                headers["t"] = t
+                url_fallback = f"{self.base_url}{url_path_fallback}"
+                response = requests.post(url_fallback, headers=headers, data=body, timeout=15)
+                response.raise_for_status()
+                data = response.json()
+                
             return data
         except Exception as e:
             logger.error(f"Error creating automation in Tuya Cloud: {e}")

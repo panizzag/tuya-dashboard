@@ -790,6 +790,29 @@ def alexa_skill():
 
     return jsonify(alexa_response)
 
+@app.route("/api/automations/create-alarm-rules", methods=["POST"])
+def api_create_alarm_rules():
+    client_id = request.headers.get("X-Tuya-Client-Id")
+    client_secret = request.headers.get("X-Tuya-Client-Secret")
+    base_url = request.headers.get("X-Tuya-Base-Url", "https://openapi.tuyaus.com")
+    
+    if not client_id or not client_secret:
+        config = load_config()
+        client_id = config.get("client_id")
+        client_secret = config.get("client_secret")
+        base_url = config.get("base_url", "https://openapi.tuyaus.com")
+        
+    if not client_id or not client_secret:
+        return jsonify({"success": False, "error": "Tuya no está configurado todavía"}), 401
+        
+    try:
+        from create_alarm_rules import generate_and_create_rules
+        res = generate_and_create_rules(client_id, client_secret, base_url)
+        return jsonify(res)
+    except Exception as e:
+        logger.error(f"Error generando automatizaciones de alarma: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
 @app.route("/api/automations", methods=["GET", "POST"])
 def manage_automations():
     # Credentials resolution
