@@ -2,8 +2,15 @@ import hmac
 import hashlib
 import time
 import json
-import requests
 import logging
+
+try:
+    import requests
+    HAS_REQUESTS = True
+except ImportError:
+    HAS_REQUESTS = False
+    import urllib.request
+    import urllib.error
 
 logger = logging.getLogger(__name__)
 
@@ -12,6 +19,31 @@ class TuyaAPI:
         self.client_id = client_id
         self.client_secret = client_secret
         self.base_url = base_url.rstrip('/')
+
+    def _http_request(self, method, url, headers, body=None, timeout=15):
+        """Sends HTTP request using requests if available, or urllib as standard library fallback."""
+        if HAS_REQUESTS:
+            if method.upper() == "GET":
+                resp = requests.get(url, headers=headers, timeout=timeout)
+            else:
+                resp = requests.post(url, headers=headers, data=body, timeout=timeout)
+            resp.raise_for_status()
+            return resp.json()
+        else:
+            data_bytes = body.encode('utf-8') if body else None
+            req = urllib.request.Request(url, data=data_bytes, headers=headers, method=method.upper())
+            try:
+                with urllib.request.urlopen(req, timeout=timeout) as response:
+                    res_body = response.read().decode('utf-8')
+                    return json.loads(res_body)
+            except urllib.error.HTTPError as e:
+                err_body = e.read().decode('utf-8')
+                try:
+                    return json.loads(err_body)
+                except Exception:
+                    raise Exception(f"HTTP Error {e.code}: {e.reason}")
+            except Exception as e:
+                raise Exception(f"Network error: {e}")
 
     def _get_timestamp(self):
         """Returns 13-digit timestamp as string."""
@@ -80,9 +112,7 @@ class TuyaAPI:
         url = f"{self.base_url}{url_path}"
         try:
             logger.info(f"Requesting access token from Tuya US West (url: {url})")
-            response = requests.get(url, headers=headers, timeout=15)
-            response.raise_for_status()
-            data = response.json()
+            data = self._http_request("GET", url, headers=headers, timeout=15)
             
             if not data.get("success"):
                 error_msg = data.get("msg", "Unknown error")
@@ -97,7 +127,7 @@ class TuyaAPI:
                 raise Exception("Tuya API returned success but access_token or uid is missing in the response.")
                 
             return access_token, uid
-        except requests.exceptions.RequestException as e:
+        except Exception as e:
             raise Exception(f"Network error connecting to Tuya API: {e}")
 
     def get_devices(self, access_token, uid=None):
@@ -126,9 +156,7 @@ class TuyaAPI:
         url = f"{self.base_url}{url_path}"
         try:
             logger.info(f"Requesting associated devices list (url: {url})")
-            response = requests.get(url, headers=headers, timeout=15)
-            response.raise_for_status()
-            data = response.json()
+            data = self._http_request("GET", url, headers=headers, timeout=15)
             
             if data.get("success"):
                 result = data.get("result", {})
@@ -161,9 +189,7 @@ class TuyaAPI:
         url = f"{self.base_url}{url_path}"
         try:
             logger.info(f"Requesting user devices list for uid {uid} (url: {url})")
-            response = requests.get(url, headers=headers, timeout=15)
-            response.raise_for_status()
-            data = response.json()
+            data = self._http_request("GET", url, headers=headers, timeout=15)
             
             if not data.get("success"):
                 error_msg = data.get("msg", "Unknown error")
@@ -171,7 +197,7 @@ class TuyaAPI:
                 raise Exception(f"Tuya API Error (Code {error_code}): {error_msg}")
                 
             return data.get("result", [])
-        except requests.exceptions.RequestException as e:
+        except Exception as e:
             raise Exception(f"Network error fetching user devices: {e}")
 
     def send_device_commands(self, access_token, device_id, commands):
@@ -201,9 +227,7 @@ class TuyaAPI:
         url = f"{self.base_url}{url_path}"
         try:
             logger.info(f"Sending commands to device {device_id} (url: {url})")
-            response = requests.post(url, headers=headers, data=body, timeout=15)
-            response.raise_for_status()
-            data = response.json()
+            data = self._http_request("POST", url, headers=headers, body=body, timeout=15)
             
             # If standard /v1.0/devices/ fails with path error, we can try /v1.0/iot-03/devices/ fallback
             if not data.get("success") and "uri" in str(data.get("msg", "")).lower():
@@ -214,21 +238,21 @@ class TuyaAPI:
                 headers["sign"] = sign_fallback
                 headers["t"] = t
                 url_fallback = f"{self.base_url}{url_path_fallback}"
-                response = requests.post(url_fallback, headers=headers, data=body, timeout=15)
-                response.raise_for_status()
-                data = response.json()
+                data = self._http_request("POST", url_fallback, headers=headers, body=body, timeout=15)
                 
             return data
-        except requests.exceptions.RequestException as e:
+        except Exception as e:
             raise Exception(f"Network error sending commands: {e}")
 
     def get_user_homes(self, access_token, uid):
         """
         Fetches home/family IDs associated with user account.
-        Endpoint: GET /v1.0/users/{uid}/homes
+        First tries /v2.0/cloud/space/child (cloud spaces/homes), then /v1.0/users/{uid}/homes fallback.
         """
         t = self._get_timestamp()
-        url_path = f"/v1.0/users/{uid}/homes"
+        
+        # Method 1: Get cloud spaces / homes
+        url_path = "/v2.0/cloud/space/child"
         sign = self._calculate_sign(t, "GET", url_path, access_token=access_token)
         headers = {
             "client_id": self.client_id,
@@ -240,9 +264,29 @@ class TuyaAPI:
         }
         url = f"{self.base_url}{url_path}"
         try:
-            response = requests.get(url, headers=headers, timeout=15)
-            response.raise_for_status()
-            data = response.json()
+            data = self._http_request("GET", url, headers=headers, timeout=15)
+            if data.get("success"):
+                result = data.get("result", {})
+                space_list = []
+                if isinstance(result, dict) and "data" in result:
+                    space_list = result.get("data", [])
+                elif isinstance(result, list):
+                    space_list = result
+                
+                if space_list:
+                    return [{"home_id": sid, "name": f"Home {sid}"} for sid in space_list]
+        except Exception as e:
+            logger.warning(f"Cloud space/home endpoint error: {e}. Trying user homes fallback...")
+
+        # Method 2: Fallback to /v1.0/users/{uid}/homes
+        t = self._get_timestamp()
+        url_path = f"/v1.0/users/{uid}/homes"
+        sign = self._calculate_sign(t, "GET", url_path, access_token=access_token)
+        headers["t"] = t
+        headers["sign"] = sign
+        url = f"{self.base_url}{url_path}"
+        try:
+            data = self._http_request("GET", url, headers=headers, timeout=15)
             if data.get("success"):
                 return data.get("result", [])
             return []
@@ -268,9 +312,7 @@ class TuyaAPI:
         }
         url = f"{self.base_url}{url_path}"
         try:
-            response = requests.get(url, headers=headers, timeout=15)
-            response.raise_for_status()
-            data = response.json()
+            data = self._http_request("GET", url, headers=headers, timeout=15)
             return data
         except Exception as e:
             logger.warning(f"Error fetching home scenes: {e}")
@@ -297,9 +339,7 @@ class TuyaAPI:
         url = f"{self.base_url}{url_path}"
         try:
             logger.info(f"Creating automation in home {home_id} via {url_path}")
-            response = requests.post(url, headers=headers, data=body, timeout=15)
-            response.raise_for_status()
-            data = response.json()
+            data = self._http_request("POST", url, headers=headers, body=body, timeout=15)
             
             # Fallback if URI or endpoint issue
             if not data.get("success") and any(err in str(data.get("msg", "")).lower() for err in ["uri", "path", "not exist", "permission"]):
@@ -310,9 +350,7 @@ class TuyaAPI:
                 headers["sign"] = sign_fallback
                 headers["t"] = t
                 url_fallback = f"{self.base_url}{url_path_fallback}"
-                response = requests.post(url_fallback, headers=headers, data=body, timeout=15)
-                response.raise_for_status()
-                data = response.json()
+                data = self._http_request("POST", url_fallback, headers=headers, body=body, timeout=15)
                 
             return data
         except Exception as e:

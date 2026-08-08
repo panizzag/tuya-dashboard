@@ -13,10 +13,29 @@ import logging
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from tuya_api import TuyaAPI
-from app import load_config, parse_sensor_device, get_alarm_host
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
+
+def load_config_file():
+    """Attempts to load credentials from config.json if available."""
+    config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
+    if os.path.exists(config_path):
+        try:
+            with open(config_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {}
+
+def find_alarm_host(raw_devices):
+    """Finds the central alarm host device ("Alarma 4G", "Central de Alarma", etc.)"""
+    for dev in raw_devices:
+        name_lower = (dev.get("name") or "").lower()
+        cat = dev.get("category", "")
+        if cat == "mal" or any(kw in name_lower for kw in ["alarma 4g", "alarma", "alarm host", "central de alarma", "panel de alarma"]):
+            return dev
+    return None
 
 def generate_and_create_rules(client_id, client_secret, base_url="https://openapi.tuyaus.com"):
     logger.info("Connecting to Tuya Cloud API...")
@@ -37,13 +56,8 @@ def generate_and_create_rules(client_id, client_secret, base_url="https://openap
     raw_devices = api.get_devices(access_token, uid)
     logger.info(f"Fetched {len(raw_devices)} devices from Tuya account.")
 
-    parsed_devices = [parse_sensor_device(dev) for dev in raw_devices]
-    
     # Find Alarma 4G
-    alarm_host = get_alarm_host(parsed_devices, [])
-    if not alarm_host:
-        # Search raw devices if parsed didn't catch it
-        alarm_host = next((d for d in raw_devices if "alarma" in (d.get("name") or "").lower() or d.get("category") == "mal"), None)
+    alarm_host = find_alarm_host(raw_devices)
 
     if not alarm_host:
         logger.error("Dispositivo 'Alarma 4G' o Central de Alarma no encontrado.")
@@ -102,32 +116,20 @@ def generate_and_create_rules(client_id, client_secret, base_url="https://openap
         trigger_value = None
 
         if is_vibration:
-            for candidate in ["vibration_status", "vibration_state", "shock_state", "vibration"]:
+            for candidate in ["shock_state", "vibration_status", "vibration_state", "vibration"]:
                 if candidate in status_dict:
                     dp_code = candidate
-                    val = status_dict[candidate]
-                    if isinstance(val, bool):
-                        trigger_value = True
-                    elif isinstance(val, str):
-                        trigger_value = "vibrate" if "vibrat" in val.lower() else val
-                    else:
-                        trigger_value = "vibrate"
+                    trigger_value = "vibration"
                     break
             if not dp_code:
-                dp_code = "vibration_status"
-                trigger_value = "vibrate"
+                dp_code = "shock_state"
+                trigger_value = "vibration"
 
         elif is_contact:
             for candidate in ["doorcontact_state", "switch", "window_state"]:
                 if candidate in status_dict:
                     dp_code = candidate
-                    val = status_dict[candidate]
-                    if isinstance(val, bool):
-                        trigger_value = True
-                    elif isinstance(val, str):
-                        trigger_value = "open" if val.lower() in ["open", "true"] else True
-                    else:
-                        trigger_value = True
+                    trigger_value = True
                     break
             if not dp_code:
                 dp_code = "doorcontact_state"
@@ -144,6 +146,7 @@ def generate_and_create_rules(client_id, client_secret, base_url="https://openap
             
             automation_payload = {
                 "name": rule_name,
+                "background": "https://images.tuyaus.com/smart/rule/cover/1.png",
                 "match_type": 2,  # Match ALL conditions
                 "conditions": [
                     {
@@ -181,13 +184,14 @@ def generate_and_create_rules(client_id, client_secret, base_url="https://openap
             logger.info(f"Creating rule: '{rule_name}'...")
             try:
                 res = api.create_automation(access_token, home_id, automation_payload)
-                if res.get("success"):
-                    rule_id = res.get("result", {}).get("id") or res.get("result")
+                if isinstance(res, dict) and res.get("success"):
+                    result_obj = res.get("result")
+                    rule_id = result_obj.get("id") if isinstance(result_obj, dict) else result_obj
                     logger.info(f"✓ Rule created successfully: '{rule_name}' (ID: {rule_id})")
                     created_rules.append({"name": rule_name, "id": rule_id, "sensor": dev_name})
                 else:
-                    msg = res.get("msg", "Unknown error")
-                    code = res.get("code", "N/A")
+                    msg = res.get("msg", "Unknown error") if isinstance(res, dict) else str(res)
+                    code = res.get("code", "N/A") if isinstance(res, dict) else "N/A"
                     logger.warning(f"✗ Failed to create rule '{rule_name}': Code {code} - {msg}")
                     failed_rules.append({"name": rule_name, "error": f"Code {code}: {msg}"})
             except Exception as e:
@@ -209,7 +213,7 @@ if __name__ == "__main__":
     base_url = os.environ.get("TUYA_BASE_URL", "https://openapi.tuyaus.com")
 
     if not client_id or not client_secret:
-        cfg = load_config()
+        cfg = load_config_file()
         client_id = cfg.get("client_id")
         client_secret = cfg.get("client_secret")
         base_url = cfg.get("base_url", "https://openapi.tuyaus.com")
